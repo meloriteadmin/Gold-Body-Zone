@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AdminRole {
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum GenderEligibility {
+  ALL
+  MALE_ONLY
+  FEMALE_ONLY
+}
+
+enum CategoryGender {
+  MALE
+  FEMALE
+  OPEN
+}
+
+enum CategoryType {
+  WEIGHT
+  HEIGHT
+  OPEN
+}
+
+enum ParticipantGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum RepresentingType {
+  GYM
+  INDIVIDUAL
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model AdminProfile {
+  id                String    @id @default(uuid())
+  authUserId        String    @unique @map("auth_user_id")
+  email             String    @unique
+  fullName          String?   @map("full_name")
+  avatarUrl         String?   @map("avatar_url")
+  avatarStoragePath String?   @map("avatar_storage_path")
+  role              AdminRole @default(ADMIN)
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("admin_profiles")
+}
+
+model Competition {
+  id                   String                @id @default(uuid())
+  slug                 String                @unique
+  name                 String
+  competitionType      String                @map("competition_type")
+  description          String?
+  posterUrl            String?               @map("poster_url")
+  posterStoragePath    String?               @map("poster_storage_path")
+  eventDate            DateTime?             @map("event_date")
+  registrationDeadline DateTime?             @map("registration_deadline")
+  venue                String?
+  registrationFee      Decimal?              @db.Decimal(10, 2) @map("registration_fee")
+  maxParticipants      Int?                  @map("max_participants")
+  genderEligibility    GenderEligibility     @default(ALL) @map("gender_eligibility")
+  ageEligibility       String?               @map("age_eligibility")
+  isPublished          Boolean               @default(false) @map("is_published")
+  publishedAt          DateTime?             @map("published_at")
+  isDefault            Boolean               @default(false) @map("is_default")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  categories           CompetitionCategory[]
+  registrations        Registration[]
+
+  @@index([isPublished, eventDate])
+  @@map("competitions")
+}
+
+model CompetitionCategory {
+  id            String         @id @default(uuid())
+  competitionId String         @map("competition_id")
+  categoryType  CategoryType   @default(OPEN) @map("category_type")
+  gender        CategoryGender @default(OPEN)
+  name          String
+  ruleNote      String?        @map("rule_note")
+  sortOrder     Int            @default(0) @map("sort_order")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  competition   Competition    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+
+  @@index([competitionId, sortOrder])
+  @@map("competition_categories")
+}
+
+model Registration {
+  id                 String              @id @default(uuid())
+  registrationCode   String              @unique @map("registration_code")
+  competitionId      String              @map("competition_id")
+  categoryId         String              @map("category_id")
+  participantName    String              @map("participant_name")
+  email              String
+  mobileNumber       String              @map("mobile_number")
+  gender             ParticipantGender
+  age                Int
+  heightCm           Decimal             @db.Decimal(5, 2) @map("height_cm")
+  weightKg           Decimal             @db.Decimal(5, 2) @map("weight_kg")
+  district                String
+  representingType        RepresentingType    @default(GYM) @map("representing_type")
+  gymName                 String              @map("gym_name")
+  aadhaarEncrypted        String?             @map("aadhaar_encrypted")
+  aadhaarHash             String?             @map("aadhaar_hash")
+  aadhaarLast4            String?             @map("aadhaar_last4")
+  aadhaarConsentAt        DateTime?           @map("aadhaar_consent_at")
+  registrationStatus      RegistrationStatus  @default(PENDING) @map("registration_status")
+  paymentStatus           PaymentStatus       @default(PENDING) @map("payment_status")
+  acknowledgementEmailSentAt DateTime?        @map("acknowledgement_email_sent_at")
+  confirmationEmailSentAt DateTime?           @map("confirmation_email_sent_at")
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  competition        Competition         @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  category           CompetitionCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  payment            Payment?
+
+  @@unique([competitionId, email])
+  @@index([competitionId, createdAt])
+  @@index([categoryId])
+  @@index([registrationStatus])
+  @@index([paymentStatus])
+  @@map("registrations")
+}
+
+model Payment {
+  id                 String        @id @default(uuid())
+  registrationId     String        @unique @map("registration_id")
+  cashfreeOrderId    String?       @unique @map("cashfree_order_id")
+  cashfreePaymentId  String?       @unique @map("cashfree_payment_id")
+  amount             Decimal?      @db.Decimal(10, 2)
+  currency           String        @default("INR")
+  status             PaymentStatus @default(PENDING)
+  paidAt             DateTime?     @map("paid_at")
+  verifiedAt         DateTime?     @map("verified_at")
+  verificationSource String?       @map("verification_source")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  registration       Registration  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("payments")
+}
