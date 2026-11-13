@@ -12,6 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useAdminInactivity } from '../../hooks/useAdminInactivity.js';
+import { AdminSessionWarningModal } from './AdminSessionWarningModal.jsx';
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -50,6 +52,9 @@ export function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const { isWarningOpen, secondsRemaining, extendSession, performLogout } =
+    useAdminInactivity();
+
   const pageTitle = ROUTE_TITLES[location.pathname] || 'Admin Dashboard';
 
   const handleLogout = async () => {
@@ -59,6 +64,12 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-[#101010] text-white lg:flex">
+      <AdminSessionWarningModal
+        isOpen={isWarningOpen}
+        secondsRemaining={secondsRemaining}
+        onExtend={extendSession}
+        onLogout={performLogout}
+      />
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/75 backdrop-blur-xs lg:hidden"

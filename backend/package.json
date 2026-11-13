@@ -12,7 +12,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "node prisma/seed.js",
     "prisma:studio": "prisma studio",
-    "admin:provision": "node src/scripts/provisionAdmin.js"
+    "admin:provision": "node src/scripts/provisionAdmin.js",
+    "smtp:verify": "node src/scripts/verifySmtp.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

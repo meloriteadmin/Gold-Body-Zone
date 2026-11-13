@@ -9,6 +9,7 @@ import {
 import { env } from '../config/env.js';
 import { apiClient } from '../lib/apiClient.js';
 import { supabase } from '../lib/supabase.js';
+import { mapAuthError } from '../utils/authErrors.js';
 
 const AuthContext = createContext(null);
 
@@ -39,7 +40,11 @@ export function AuthProvider({ children }) {
         setSession(nextSession);
       }
       setAdminProfile(null);
-      setAuthError(err.message || 'Unable to verify admin privileges.');
+      const friendlyMessage = mapAuthError(err, {
+        operation: 'session_verify',
+        fallbackMessage: 'Unable to verify admin privileges.',
+      });
+      setAuthError(friendlyMessage);
       return null;
     }
   }, []);
@@ -108,7 +113,9 @@ export function AuthProvider({ children }) {
     });
 
     if (error || !data?.session) {
-      throw new Error(error?.message || 'Invalid email or password.');
+      const friendlyMessage = mapAuthError(error, { operation: 'login' });
+      setAuthError(friendlyMessage);
+      throw new Error(friendlyMessage);
     }
 
     let verifiedProfile = null;
@@ -124,8 +131,12 @@ export function AuthProvider({ children }) {
         setSession(data.session);
       }
       setAdminProfile(null);
-      setAuthError(err.message || 'Unable to load admin profile.');
-      throw err;
+      const friendlyMessage = mapAuthError(err, {
+        operation: 'session_verify',
+        fallbackMessage: 'Unable to load admin profile.',
+      });
+      setAuthError(friendlyMessage);
+      throw new Error(friendlyMessage);
     }
 
     setSession(data.session);
@@ -145,7 +156,11 @@ export function AuthProvider({ children }) {
       });
 
       if (verifyError) {
-        throw new Error('Current password is incorrect.');
+        const friendlyMessage = mapAuthError(verifyError, {
+          operation: 'change_password_verify',
+          fallbackMessage: 'Current password is incorrect.',
+        });
+        throw new Error(friendlyMessage);
       }
 
       const { data: updateData, error: updateError } =
@@ -154,9 +169,11 @@ export function AuthProvider({ children }) {
         });
 
       if (updateError) {
-        throw new Error(
-          updateError.message || 'Unable to update password. Please try again.'
-        );
+        const friendlyMessage = mapAuthError(updateError, {
+          operation: 'change_password',
+          fallbackMessage: 'Unable to update password. Please try again.',
+        });
+        throw new Error(friendlyMessage);
       }
 
       const { data: sessionData } = await supabase.auth.getSession();
@@ -182,7 +199,11 @@ export function AuthProvider({ children }) {
       redirectTo,
     });
     if (error) {
-      throw new Error(error.message || 'Unable to send password reset email.');
+      const friendlyMessage = mapAuthError(error, {
+        operation: 'password_reset',
+        fallbackMessage: 'Unable to send password reset email. Please try again later.',
+      });
+      throw new Error(friendlyMessage);
     }
     return true;
   }, [adminProfile?.email]);

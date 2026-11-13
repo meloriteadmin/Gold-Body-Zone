@@ -111,6 +111,8 @@ const { env } = await import('../src/config/env.js');
 const {
   sendRegistrationAcknowledgementEmail,
   sendRegistrationConfirmationEmail,
+  sendTestEmail,
+  verifySmtpConnection,
 } = await import('../src/services/email.service.js');
 const { resendRegistrationConfirmationEmail } = await import(
   '../src/controllers/adminRegistrations.controller.js'
@@ -256,5 +258,64 @@ describe('Registration Confirmation Email & Safe Retry', () => {
     assert.match(sentMessages[0].text, /Payment Status: PENDING/i);
     assert.ok(db.registrations.get('reg-ack-1').acknowledgementEmailSentAt);
     assert.equal(db.registrations.get('reg-ack-1').confirmationEmailSentAt, null);
+  });
+
+  it('verifySmtpConnection succeeds when transporter verification passes without exposing credentials', async () => {
+    let verifyCalled = false;
+    const fakeTransporter = {
+      async verify() {
+        verifyCalled = true;
+        return true;
+      },
+    };
+
+    const res = await verifySmtpConnection({ transporter: fakeTransporter });
+    assert.equal(verifyCalled, true);
+    assert.equal(res.success, true);
+    assert.equal(res.configured, true);
+    assert.equal(res.host, env.smtpHost);
+    assert.equal(res.port, env.smtpPort);
+    assert.equal(res.user, env.smtpUser);
+    assert.equal(res.pass, undefined, 'Password must never be exposed');
+  });
+
+  it('verifySmtpConnection safely captures failure when verification fails', async () => {
+    const fakeTransporter = {
+      async verify() {
+        const err = new Error('Invalid login: 535-5.7.8 Username and Password not accepted');
+        err.code = 'EAUTH';
+        err.responseCode = 535;
+        throw err;
+      },
+    };
+
+    const res = await verifySmtpConnection({ transporter: fakeTransporter });
+    assert.equal(res.success, false);
+    assert.equal(res.code, 'EAUTH');
+    assert.equal(res.responseCode, 535);
+    assert.match(res.message, /535/);
+    assert.equal(res.pass, undefined, 'Password must never be exposed');
+  });
+
+  it('sendTestEmail sends formatted diagnostic email to recipient', async () => {
+    const sent = [];
+    const fakeTransporter = {
+      async sendMail(msg) {
+        sent.push(msg);
+        return { messageId: '<test-msg-123@ironstage.com>', response: '250 OK' };
+      },
+    };
+
+    const res = await sendTestEmail('test-athlete@example.com', {
+      transporter: fakeTransporter,
+    });
+
+    assert.equal(res.sent, true);
+    assert.equal(res.recipient, 'test-athlete@example.com');
+    assert.equal(res.messageId, '<test-msg-123@ironstage.com>');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, 'test-athlete@example.com');
+    assert.match(sent[0].subject, /SMTP Verification Test Email/i);
+    assert.match(sent[0].html, /SMTP Delivery Verified/i);
   });
 });

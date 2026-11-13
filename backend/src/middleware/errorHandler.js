@@ -1,9 +1,15 @@
 import { env } from '../config/env.js';
 
 export function errorHandler(err, _req, res, _next) {
-  const statusCode = err.statusCode || 500;
+  let statusCode = err.statusCode || err.status || 500;
+  if (err.message && err.message.includes('CORS origin')) {
+    statusCode = 403;
+  }
+
   const response = {
-    error: err.name || 'InternalServerError',
+    error:
+      err.name ||
+      (statusCode === 429 ? 'TooManyRequests' : 'InternalServerError'),
     message:
       statusCode === 500 && env.nodeEnv === 'production'
         ? 'An unexpected error occurred'

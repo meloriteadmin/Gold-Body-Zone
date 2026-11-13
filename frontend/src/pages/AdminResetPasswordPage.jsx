@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { mapAuthError } from '../utils/authErrors.js';
 
 export function AdminResetPasswordPage() {
   const navigate = useNavigate();
@@ -116,7 +117,10 @@ export function AdminResetPasswordPage() {
 
       if (verifyErr) {
         throw new Error(
-          'Current password is incorrect. Please verify your current credentials and try again.'
+          mapAuthError(verifyErr, {
+            operation: 'change_password_verify',
+            fallbackMessage: 'Current password is incorrect.',
+          })
         );
       }
 
@@ -126,7 +130,12 @@ export function AdminResetPasswordPage() {
       });
 
       if (updateErr) {
-        throw new Error(updateErr.message || 'Failed to update password.');
+        throw new Error(
+          mapAuthError(updateErr, {
+            operation: 'change_password',
+            fallbackMessage: 'Unable to update password. Please try again.',
+          })
+        );
       }
 
       // Clear sensitive password values from component state
@@ -136,8 +145,11 @@ export function AdminResetPasswordPage() {
       setSuccess(true);
     } catch (err) {
       setError(
-        err?.message ||
-          'Unable to update password. Your recovery link may have expired.'
+        mapAuthError(err, {
+          operation: 'change_password',
+          fallbackMessage:
+            'Unable to update password. Your recovery link may have expired.',
+        })
       );
     } finally {
       setSubmitting(false);

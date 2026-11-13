@@ -373,3 +373,139 @@ export async function sendRegistrationAcknowledgementEmail(
     };
   }
 }
+
+/**
+ * Safely verifies SMTP connection and authentication with the configured server.
+ * Never exposes passwords or credentials in returned result or logs.
+ */
+export async function verifySmtpConnection({
+  transporter: customTransporter,
+} = {}) {
+  const transporter = customTransporter || getTransporter();
+  if (!transporter) {
+    const missing = [
+      !env.smtpHost && 'SMTP_HOST',
+      !env.smtpUser && 'SMTP_USER',
+      !env.smtpPass && 'SMTP_PASS',
+      !env.emailFrom && 'SMTP_FROM',
+    ].filter(Boolean);
+    return {
+      success: false,
+      configured: false,
+      missing,
+      message: `SMTP is not configured (missing: ${missing.join(', ') || 'SMTP config'})`,
+    };
+  }
+
+  try {
+    await transporter.verify();
+    return {
+      success: true,
+      configured: true,
+      host: env.smtpHost,
+      port: env.smtpPort,
+      secure: env.smtpSecure,
+      user: env.smtpUser,
+      from: env.emailFrom,
+      message: 'SMTP connection and authentication verified successfully.',
+    };
+  } catch (err) {
+    console.error('[email] SMTP connection verification failed:', {
+      code: err?.code || null,
+      responseCode: err?.responseCode || null,
+      message: err?.message || String(err),
+    });
+    return {
+      success: false,
+      configured: true,
+      host: env.smtpHost,
+      port: env.smtpPort,
+      code: err?.code || null,
+      responseCode: err?.responseCode || null,
+      message: err?.message || 'SMTP connection verification failed.',
+    };
+  }
+}
+
+/**
+ * Sends a test email to verify end-to-end delivery.
+ * Does not expose credentials.
+ */
+export async function sendTestEmail(
+  targetEmail,
+  { transporter: customTransporter } = {}
+) {
+  const transporter = customTransporter || getTransporter();
+  const recipient = targetEmail || env.smtpUser;
+  if (!transporter || !recipient) {
+    return {
+      sent: false,
+      message: 'SMTP is not configured or recipient email is missing.',
+    };
+  }
+
+  const subject = 'IRONSTAGE — SMTP Verification Test Email';
+  const timestamp = new Date().toISOString();
+  const text = [
+    'Hello,',
+    '',
+    'This is a test email from your IRONSTAGE backend to verify that Nodemailer SMTP settings are working properly.',
+    '',
+    `SMTP Host: ${env.smtpHost}`,
+    `SMTP Port: ${env.smtpPort}`,
+    `SMTP Secure: ${env.smtpSecure}`,
+    `Sender: ${env.emailFrom}`,
+    `Recipient: ${recipient}`,
+    `Timestamp: ${timestamp}`,
+    '',
+    'All systems operational.',
+  ].join('\n');
+
+  const html = `
+    <div style="background:#101010;color:#ffffff;font-family:Arial,sans-serif;padding:32px;">
+      <div style="max-width:600px;margin:0 auto;background:#171717;border:1px solid #2a2a2a;border-radius:16px;padding:28px;">
+        <p style="margin:0;color:#F15A24;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
+          IRONSTAGE System Test
+        </p>
+        <h1 style="margin:8px 0 16px;font-size:22px;color:#ffffff;">
+          SMTP Delivery Verified
+        </h1>
+        <p style="margin:0 0 16px;color:#d4d4d8;font-size:14px;line-height:1.6;">
+          This test email confirms that Nodemailer SMTP delivery is properly configured and functioning on your backend.
+        </p>
+        <table style="width:100%;border-collapse:collapse;background:#222222;border-radius:12px;overflow:hidden;font-size:13px;">
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">SMTP Host</td><td style="padding:10px 14px;color:#ffffff;">${escapeHtml(env.smtpHost)}</td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">SMTP Port</td><td style="padding:10px 14px;color:#ffffff;">${escapeHtml(env.smtpPort)}</td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Sender</td><td style="padding:10px 14px;color:#ffffff;">${escapeHtml(env.emailFrom)}</td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Recipient</td><td style="padding:10px 14px;color:#34d399;font-weight:600;">${escapeHtml(recipient)}</td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Verified At</td><td style="padding:10px 14px;color:#ffffff;">${escapeHtml(timestamp)}</td></tr>
+        </table>
+      </div>
+    </div>
+  `;
+
+  try {
+    const info = await transporter.sendMail({
+      from: env.emailFrom,
+      to: recipient,
+      subject,
+      text,
+      html,
+    });
+    return {
+      sent: true,
+      messageId: info.messageId,
+      recipient,
+      response: info.response,
+    };
+  } catch (err) {
+    console.error('[email] Test email delivery failed:', {
+      code: err?.code || null,
+      message: err?.message || String(err),
+    });
+    return {
+      sent: false,
+      message: err?.message || 'Failed to send test email.',
+    };
+  }
+}

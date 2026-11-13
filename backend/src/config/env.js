@@ -31,7 +31,17 @@ export const env = {
   smtpSecure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
   smtpUser: process.env.SMTP_USER?.trim() || '',
   smtpPass: process.env.SMTP_PASS?.trim() || '',
-  emailFrom: process.env.EMAIL_FROM?.trim() || '',
+  smtpFrom:
+    process.env.SMTP_FROM?.trim() || process.env.EMAIL_FROM?.trim() || '',
+  get emailFrom() {
+    return (
+      this.smtpFrom ||
+      (this.smtpUser ? `IRONSTAGE <${this.smtpUser}>` : '')
+    );
+  },
+  set emailFrom(val) {
+    this.smtpFrom = val ? String(val).trim() : '';
+  },
 
   get isDatabaseConfigured() {
     return Boolean(this.databaseUrl);

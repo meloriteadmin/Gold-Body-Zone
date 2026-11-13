@@ -11,22 +11,57 @@ import healthRoutes from './routes/health.routes.js';
 export function createApp() {
   const app = express();
 
-  app.use(helmet());
+  // Trust reverse proxies (Render, Railway, Cloudflare, Nginx) for accurate client IP resolution
+  app.set('trust proxy', 1);
+
+  // Security HTTP Headers
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow images/posters to be embedded
+    })
+  );
+
+  const allowedOrigins = env.corsOrigin
+    ? env.corsOrigin
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    : ['http://localhost:5173'];
+
   app.use(
     cors({
-      origin: env.corsOrigin,
+      origin: (origin, callback) => {
+        // Allow non-browser callers (webhooks, server-side calls, mobile) with no Origin header
+        if (!origin) {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`CORS origin '${origin}' is not allowed.`));
+      },
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: [
+        'RateLimit-Limit',
+        'RateLimit-Remaining',
+        'RateLimit-Reset',
+        'Retry-After',
+      ],
+      maxAge: 86400,
     })
   );
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
   app.use(
     express.json({
+      limit: '1mb',
       verify: (req, _res, buf) => {
         req.rawBody = buf.toString('utf8');
       },
     })
   );
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   app.use('/health', healthRoutes);
   app.use('/api', apiRoutes);

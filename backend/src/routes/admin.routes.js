@@ -22,18 +22,24 @@ import {
   updateRegistrationStatus,
 } from '../controllers/adminRegistrations.controller.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import {
+  adminGeneralLimiter,
+  adminSensitiveLimiter,
+} from '../middleware/rateLimiter.js';
 import { uploadImageMiddleware } from '../middleware/upload.js';
 
 const router = Router();
 
 router.use(requireAdmin);
+router.use(adminGeneralLimiter);
 
 router.get('/dashboard', getDashboardOverview);
 
 router.get('/profile', getAdminProfile);
-router.patch('/profile', updateAdminProfile);
+router.patch('/profile', adminSensitiveLimiter, updateAdminProfile);
 router.post(
   '/profile/avatar',
+  adminSensitiveLimiter,
   uploadImageMiddleware.single('avatar'),
   uploadAdminAvatar
 );
@@ -41,24 +47,40 @@ router.post(
 router.get('/competitions', listCompetitions);
 router.post('/competitions', createCompetition);
 router.patch('/competitions/:id', updateCompetition);
-router.delete('/competitions/:id', deleteCompetition);
-router.patch('/competitions/:id/publish', setCompetitionPublishStatus);
+router.delete('/competitions/:id', adminSensitiveLimiter, deleteCompetition);
+router.patch(
+  '/competitions/:id/publish',
+  adminSensitiveLimiter,
+  setCompetitionPublishStatus
+);
 router.post(
   '/competitions/:id/poster',
   uploadImageMiddleware.single('poster'),
   uploadCompetitionPoster
 );
-router.delete('/competitions/:id/poster', removeCompetitionPoster);
+router.delete(
+  '/competitions/:id/poster',
+  adminSensitiveLimiter,
+  removeCompetitionPoster
+);
 
 router.post('/competitions/:id/categories', addCategory);
-router.patch('/competitions/:id/categories/:categoryId', updateCategory);
-router.delete('/competitions/:id/categories/:categoryId', deleteCategory);
+router.patch(
+  '/competitions/:id/categories/:categoryId',
+  updateCategory
+);
+router.delete(
+  '/competitions/:id/categories/:categoryId',
+  adminSensitiveLimiter,
+  deleteCategory
+);
 
 router.get('/registrations', listRegistrations);
 router.get('/registrations/:id', getRegistrationById);
 router.patch('/registrations/:id/status', updateRegistrationStatus);
 router.post(
   '/registrations/:id/resend-confirmation-email',
+  adminSensitiveLimiter,
   resendRegistrationConfirmationEmail
 );
 

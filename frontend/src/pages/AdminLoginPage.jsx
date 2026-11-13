@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
+  Clock,
   Dumbbell,
   Eye,
   EyeOff,
@@ -10,6 +11,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { mapAuthError } from '../utils/authErrors.js';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
@@ -65,11 +67,17 @@ export function AdminLoginPage() {
       const target = location.state?.from || '/admin';
       navigate(target, { replace: true });
     } catch (err) {
-      setSubmitError(err.message || 'Authentication failed.');
+      setSubmitError(mapAuthError(err));
     } finally {
       setSubmitting(false);
     }
   };
+
+  const sessionExpiredNotice =
+    location.state?.reason === 'SESSION_EXPIRED'
+      ? location.state?.message ||
+        'Your session has expired due to 30 minutes of inactivity. Please sign in again.'
+      : '';
 
   const displayedError = submitError || authError;
 
@@ -98,6 +106,16 @@ export function AdminLoginPage() {
             Sign in with your provisioned administrator credentials to manage
             competitions, categories, and publications.
           </p>
+
+          {sessionExpiredNotice && !displayedError && (
+            <div
+              role="status"
+              className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs font-medium text-amber-200"
+            >
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <span>{sessionExpiredNotice}</span>
+            </div>
+          )}
 
           {!isSupabaseConfigured && (
             <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-[#F15A24]/40 bg-[#F15A24]/10 p-3.5 text-xs text-orange-200">

@@ -77,6 +77,9 @@ let pendingCompetitionsPromise = null;
 const competitionDetailCache = new Map();
 const pendingDetailPromises = new Map();
 
+let pendingMyRegistrationsPromise = null;
+let lastMyRegistrationsToken = null;
+
 export const apiClient = {
   // Public
   fetchPublishedCompetitions: ({ force = false } = {}) => {
@@ -154,8 +157,29 @@ export const apiClient = {
       body: payload,
       timeoutMs: 20000,
     }),
-  fetchMyRegistrations: (token) =>
-    request('/public/my-registrations', { token }),
+  fetchMyRegistrations: (token) => {
+    const cleanToken = typeof token === 'string' ? token.trim() : '';
+    if (
+      pendingMyRegistrationsPromise &&
+      lastMyRegistrationsToken === cleanToken
+    ) {
+      return pendingMyRegistrationsPromise;
+    }
+
+    lastMyRegistrationsToken = cleanToken;
+    const promise = request('/public/my-registrations', {
+      token: cleanToken,
+      timeoutMs: 15000,
+    }).finally(() => {
+      if (pendingMyRegistrationsPromise === promise) {
+        pendingMyRegistrationsPromise = null;
+        lastMyRegistrationsToken = null;
+      }
+    });
+
+    pendingMyRegistrationsPromise = promise;
+    return promise;
+  },
 
   // Admin Dashboard & Profile
   fetchAdminDashboard: (token) => request('/admin/dashboard', { token }),
