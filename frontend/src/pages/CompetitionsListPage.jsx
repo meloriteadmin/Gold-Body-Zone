@@ -1,21 +1,12 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Trophy } from 'lucide-react';
 import { CompetitionPosterCard } from '../components/public/CompetitionPosterCard.jsx';
-import { useParticipantAuth } from '../context/ParticipantAuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
 
 export function CompetitionsListPage() {
-  const { registrationsByCompetitionId, accessToken, refreshRegistrations } =
-    useParticipantAuth();
   const [competitions, setCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (accessToken) {
-      refreshRegistrations(accessToken).catch(() => {});
-    }
-  }, [accessToken, refreshRegistrations]);
 
   const loadCompetitions = async (force = false) => {
     setLoading(true);
@@ -117,7 +108,6 @@ export function CompetitionsListPage() {
               <CompetitionPosterCard
                 key={comp.id}
                 competition={comp}
-                userRegistration={registrationsByCompetitionId[comp.id] || null}
               />
             ))}
           </section>

@@ -22,7 +22,7 @@ export function generateRegistrationCode() {
   return `REG-${ym}-${randomPart}`;
 }
 
-export function validatePublicRegistration(body) {
+export function validatePublicRegistration(body, competition = null) {
   const competitionId = cleanString(body?.competitionId);
   if (!competitionId) {
     throw new HttpError(400, 'Competition is required.');
@@ -61,18 +61,57 @@ export function validatePublicRegistration(body) {
     throw new HttpError(400, 'Please select a valid gender.');
   }
 
+  const isWomensCompetition =
+    competition?.competitionType === "Women's Competition" ||
+    competition?.genderEligibility === 'FEMALE_ONLY';
+
+  const isMaleOnlyCompetition =
+    competition?.genderEligibility === 'MALE_ONLY' ||
+    ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+      competition?.competitionType
+    );
+
+  if (isWomensCompetition && gender !== 'FEMALE') {
+    throw new HttpError(
+      400,
+      "Women's Competition accepts only Female participants."
+    );
+  }
+
+  if (isMaleOnlyCompetition && gender !== 'MALE') {
+    throw new HttpError(
+      400,
+      'This competition is exclusive to Male participants.'
+    );
+  }
+
   const age = Number(body?.age);
   if (!Number.isInteger(age) || age < 10 || age > 100) {
     throw new HttpError(400, 'Age must be a whole number between 10 and 100.');
   }
 
-  const heightCm = Number(body?.heightCm);
-  if (Number.isNaN(heightCm) || heightCm < 80 || heightCm > 260) {
+  // Height and Weight are not required for Women's Competition
+  let parsedHeightCm = null;
+  const rawHeight = body?.heightCm;
+  if (rawHeight !== undefined && rawHeight !== null && rawHeight !== '') {
+    const heightCm = Number(rawHeight);
+    if (Number.isNaN(heightCm) || heightCm < 80 || heightCm > 260) {
+      throw new HttpError(400, 'Height must be between 80 and 260 cm.');
+    }
+    parsedHeightCm = Number(heightCm.toFixed(2));
+  } else if (!isWomensCompetition) {
     throw new HttpError(400, 'Height must be between 80 and 260 cm.');
   }
 
-  const weightKg = Number(body?.weightKg);
-  if (Number.isNaN(weightKg) || weightKg < 25 || weightKg > 300) {
+  let parsedWeightKg = null;
+  const rawWeight = body?.weightKg;
+  if (rawWeight !== undefined && rawWeight !== null && rawWeight !== '') {
+    const weightKg = Number(rawWeight);
+    if (Number.isNaN(weightKg) || weightKg < 25 || weightKg > 300) {
+      throw new HttpError(400, 'Weight must be between 25 and 300 kg.');
+    }
+    parsedWeightKg = Number(weightKg.toFixed(2));
+  } else if (!isWomensCompetition) {
     throw new HttpError(400, 'Weight must be between 25 and 300 kg.');
   }
 
@@ -105,16 +144,19 @@ export function validatePublicRegistration(body) {
     );
   }
 
+  const groupId = cleanString(body?.groupId) || null;
+
   return {
     competitionId,
     categoryId,
+    groupId,
     participantName,
     email,
     mobileNumber: mobileDigits,
     gender,
     age,
-    heightCm: Number(heightCm.toFixed(2)),
-    weightKg: Number(weightKg.toFixed(2)),
+    heightCm: parsedHeightCm,
+    weightKg: parsedWeightKg,
     district,
     representingType: rawRepresenting,
     gymName,

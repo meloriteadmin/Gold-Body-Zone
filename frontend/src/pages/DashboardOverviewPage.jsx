@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Calendar,
+  ChevronRight,
   Eye,
   FileEdit,
   Loader2,
   MapPin,
   Plus,
   Trophy,
+  Users,
 } from 'lucide-react';
 import { StatusBadge } from '../components/common/StatusBadge.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -177,11 +179,20 @@ export function DashboardOverviewPage() {
                 {competitions.map((comp) => (
                   <div
                     key={comp.id}
-                    className="flex flex-col justify-between gap-3 py-4 sm:flex-row sm:items-center"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/admin/competitions/${comp.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(`/admin/competitions/${comp.id}`);
+                      }
+                    }}
+                    className="group flex flex-col justify-between gap-3 -mx-3 rounded-xl px-3 py-4 cursor-pointer transition-colors hover:bg-white/[0.04] sm:flex-row sm:items-center"
                   >
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-bold text-white">
+                        <span className="text-sm font-bold text-white group-hover:text-[#F15A24] transition-colors">
                           {comp.name}
                         </span>
                         <span className="rounded-md border border-[#F15A24]/30 bg-[#F15A24]/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-[#F15A24] uppercase">
@@ -205,12 +216,23 @@ export function DashboardOverviewPage() {
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="flex items-center gap-3 shrink-0">
                       <StatusBadge
-                        variant={comp.isPublished ? 'published' : 'draft'}
+                        variant={
+                          comp.isCompleted
+                            ? 'completed'
+                            : comp.isPublished
+                              ? 'published'
+                              : 'draft'
+                        }
                       >
-                        {comp.isPublished ? 'Published' : 'Draft'}
+                        {comp.isCompleted
+                          ? 'Completed'
+                          : comp.isPublished
+                            ? 'Published'
+                            : 'Draft'}
                       </StatusBadge>
+                      <ChevronRight className="h-4 w-4 text-[#A1A1AA] transition-transform group-hover:translate-x-0.5 group-hover:text-[#F15A24]" />
                     </div>
                   </div>
                 ))}

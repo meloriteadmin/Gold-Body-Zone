@@ -1,6 +1,7 @@
 .gymx-hero-stage {
   position: relative;
   min-height: calc(100vh - 78px);
+  height: auto;
   width: 100%;
   background-color: #000000;
   color: #ffffff;
@@ -120,19 +121,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding-top: clamp(20px, 4.2vh, 48px);
-  padding-inline: 20px;
+  padding-top: clamp(24px, 4vh, 40px);
+  padding-inline: clamp(0px, 1.5vw, 16px);
   text-align: center;
   pointer-events: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .gymx-hero-title {
-  margin: 0;
+  margin: 0 auto;
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 800;
   text-transform: uppercase;
-  font-size: clamp(2.65rem, 5.6vw, 5.15rem);
-  line-height: 0.94;
+  font-size: clamp(1.5rem, 3.1vw, 2.9rem);
+  line-height: 1.05;
   letter-spacing: 0.01em;
   text-shadow: 0 8px 34px rgba(0, 0, 0, 0.72);
 }
@@ -165,6 +168,39 @@
   width: 100%;
   pointer-events: none;
   overflow: visible;
+  margin-top: clamp(24px, 4vh, 44px);
+}
+
+/* Dewali Shree 2026 Grand Championship Hero Poster - Full Width & Seamless */
+.gymx-hero-poster-wrap {
+  width: 100%;
+  max-width: 1400px;
+  margin: clamp(14px, 2.2vh, 24px) auto 0;
+  pointer-events: auto;
+  position: relative;
+  z-index: 22;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
+}
+
+.gymx-hero-poster-img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 1181 / 1287;
+  object-fit: contain;
+  display: block;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
 }
 
 .gymx-strip {
@@ -239,10 +275,6 @@
 }
 
 @media (max-width: 900px) {
-  .gymx-hero-stage {
-    min-height: 620px;
-  }
-
   .gymx-athletes-wrap {
     width: 120vw;
     height: 62vh;
@@ -254,5 +286,43 @@
 
   .gymx-strip-word-grey {
     font-size: 19px;
+  }
+}
+
+/* Tablet: fluid full width */
+@media (max-width: 1024px) and (min-width: 641px) {
+  .gymx-hero-content {
+    padding-top: 24px;
+    padding-inline: 0;
+  }
+
+  .gymx-hero-poster-wrap {
+    max-width: 100%;
+    margin-top: 16px;
+    padding: 0;
+  }
+}
+
+/* Mobile: full width responsive poster */
+@media (max-width: 640px) {
+  .gymx-hero-stage {
+    min-height: auto;
+    height: auto;
+    overflow-x: hidden;
+  }
+
+  .gymx-hero-content {
+    padding-top: 20px;
+    padding-inline: 0;
+  }
+
+  .gymx-hero-poster-wrap {
+    max-width: 100%;
+    padding: 0;
+    margin-top: 14px;
+  }
+
+  .gymx-tickers {
+    margin-top: 20px;
   }
 }

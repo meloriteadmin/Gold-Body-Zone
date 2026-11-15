@@ -41,6 +41,12 @@ const PUBLIC_REG_INCLUDE = {
       categoryType: true,
     },
   },
+  group: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
   payment: true,
 };
 
@@ -223,10 +229,13 @@ export async function listPublishedCompetitions(_req, res, next) {
 
     const prisma = getPrismaClient();
     const competitions = await prisma.competition.findMany({
-      where: { isPublished: true },
+      where: { isPublished: true, isCompleted: false },
       include: {
         categories: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            groups: { orderBy: { sortOrder: 'asc' } },
+          },
         },
       },
       orderBy: [{ eventDate: 'asc' }, { createdAt: 'asc' }],
@@ -234,7 +243,9 @@ export async function listPublishedCompetitions(_req, res, next) {
 
     res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     res.status(200).json({
-      competitions: competitions.map(serializeCompetition),
+      competitions: competitions.map((comp) =>
+        serializeCompetition(comp, { filterIneligible: true })
+      ),
     });
   } catch (err) {
     next(err);
@@ -252,11 +263,15 @@ export async function getPublishedCompetition(req, res, next) {
     const competition = await prisma.competition.findFirst({
       where: {
         isPublished: true,
+        isCompleted: false,
         OR: [{ id: lookup }, { slug: lookup }],
       },
       include: {
         categories: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            groups: { orderBy: { sortOrder: 'asc' } },
+          },
         },
       },
     });
@@ -267,7 +282,7 @@ export async function getPublishedCompetition(req, res, next) {
 
     res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     res.status(200).json({
-      competition: serializeCompetition(competition),
+      competition: serializeCompetition(competition, { filterIneligible: true }),
     });
   } catch (err) {
     next(err);
@@ -280,19 +295,23 @@ export async function createPublicRegistration(req, res, next) {
       throw new HttpError(503, 'Database is not configured yet.');
     }
 
-    const input = validatePublicRegistration(req.body);
-    if (req.participantEmail) {
-      input.email = req.participantEmail;
+    const competitionId = req.body?.competitionId;
+    if (!competitionId) {
+      throw new HttpError(400, 'Competition is required.');
     }
-    const prisma = getPrismaClient();
 
+    const prisma = getPrismaClient();
     const competition = await prisma.competition.findFirst({
       where: {
-        id: input.competitionId,
+        id: competitionId,
         isPublished: true,
       },
       include: {
-        categories: true,
+        categories: {
+          include: {
+            groups: true,
+          },
+        },
       },
     });
 
@@ -303,7 +322,23 @@ export async function createPublicRegistration(req, res, next) {
       );
     }
 
+    if (competition.isCompleted) {
+      throw new HttpError(
+        400,
+        'This competition has concluded and is no longer accepting new registrations.'
+      );
+    }
+
+    if (competition.isRegistrationClosed) {
+      throw new HttpError(
+        400,
+        'Registrations for this competition have been closed by the organizer.'
+      );
+    }
+
     assertDeadlineOpen(competition.registrationDeadline);
+
+    const input = validatePublicRegistration(req.body, competition);
 
     if (!input.categoryId && competition.competitionType === 'Masters' && competition.categories.length > 0) {
       input.categoryId = competition.categories[0].id;
@@ -319,9 +354,23 @@ export async function createPublicRegistration(req, res, next) {
       );
     }
 
+    let resolvedGroup = null;
+    if (input.groupId) {
+      resolvedGroup = (category.groups || []).find((g) => g.id === input.groupId);
+      if (!resolvedGroup) {
+        throw new HttpError(
+          400,
+          'Selected group/division does not belong to this category.'
+        );
+      }
+    }
+
     if (
-      competition.genderEligibility === 'MALE_ONLY' &&
-      input.gender !== 'MALE'
+      (competition.genderEligibility === 'MALE_ONLY' ||
+        ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+          competition.competitionType
+        )) &&
+      (input.gender !== 'MALE' || category.gender === 'FEMALE')
     ) {
       throw new HttpError(
         400,
@@ -330,8 +379,9 @@ export async function createPublicRegistration(req, res, next) {
     }
 
     if (
-      competition.genderEligibility === 'FEMALE_ONLY' &&
-      input.gender !== 'FEMALE'
+      (competition.genderEligibility === 'FEMALE_ONLY' ||
+        competition.competitionType === "Women's Competition") &&
+      (input.gender !== 'FEMALE' || category.gender === 'MALE')
     ) {
       throw new HttpError(
         400,
@@ -417,6 +467,8 @@ export async function createPublicRegistration(req, res, next) {
           where: { id: existing.id },
           data: {
             categoryId: category.id,
+            groupId: resolvedGroup ? resolvedGroup.id : null,
+            groupName: resolvedGroup ? resolvedGroup.name : null,
             participantName: input.participantName,
             mobileNumber: input.mobileNumber,
             gender: input.gender,
@@ -451,6 +503,8 @@ export async function createPublicRegistration(req, res, next) {
           registrationCode: generateRegistrationCode(),
           competitionId: competition.id,
           categoryId: category.id,
+          groupId: resolvedGroup ? resolvedGroup.id : null,
+          groupName: resolvedGroup ? resolvedGroup.name : null,
           participantName: input.participantName,
           email: input.email,
           mobileNumber: input.mobileNumber,
@@ -527,14 +581,11 @@ export async function retryRegistrationPayment(req, res, next) {
           registration.id,
           registration.payment.cashfreeOrderId
         ));
-    const jwtAuthorized =
-      Boolean(req.participantEmail) &&
-      req.participantEmail === registration.email;
 
-    if (!tokenAuthorized && !jwtAuthorized) {
+    if (bodyToken && !tokenAuthorized) {
       throw new HttpError(
         403,
-        'Authentication or valid checkout session is required to retry payment.'
+        'Invalid checkout session to retry payment.'
       );
     }
 
@@ -680,29 +731,6 @@ export async function verifyPublicOrderPayment(req, res, next) {
       orderStatus: cfState.orderStatus,
       registration: serializePublicRegistration(updatedRegistration),
       statusToken: createCheckoutStatusToken(updatedRegistration.id, orderId),
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-export async function listMyRegistrations(req, res, next) {
-  try {
-    if (!env.isDatabaseConfigured) {
-      throw new HttpError(503, 'Database is not configured yet.');
-    }
-
-    const prisma = getPrismaClient();
-    const registrations = await prisma.registration.findMany({
-      where: {
-        email: req.participantEmail,
-      },
-      include: PUBLIC_REG_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.status(200).json({
-      registrations: registrations.map(serializePublicRegistration),
     });
   } catch (err) {
     next(err);

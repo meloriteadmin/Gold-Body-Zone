@@ -45,7 +45,9 @@ export function ManageCompetitionsPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiClient.fetchAdminCompetitions(accessToken);
+      const data = await apiClient.fetchAdminCompetitions(accessToken, {
+        history: false,
+      });
       setCompetitions(data.competitions || []);
     } catch (err) {
       setError(err.message || 'Failed to load competitions.');
@@ -206,12 +208,15 @@ export function ManageCompetitionsPage() {
               >
                 <div className="flex flex-col gap-6 p-5 md:flex-row">
                   {/* Poster Column */}
-                  <div className="w-full shrink-0 md:w-44">
+                  <div
+                    onClick={() => navigate(`/admin/competitions/${comp.id}`)}
+                    className="w-full shrink-0 cursor-pointer md:w-44 group"
+                  >
                     {comp.posterUrl ? (
                       <img
                         src={comp.posterUrl}
                         alt={`${comp.name} poster`}
-                        className="h-52 w-full rounded-xl border border-white/10 object-cover"
+                        className="h-52 w-full rounded-xl border border-white/10 object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                       />
                     ) : (
                       <div className="flex h-52 w-full flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-[#171717] p-4 text-center">
@@ -238,13 +243,26 @@ export function ManageCompetitionsPage() {
                               {comp.competitionType}
                             </StatusBadge>
                             <StatusBadge
-                              variant={comp.isPublished ? 'published' : 'draft'}
+                              variant={
+                                comp.isCompleted
+                                  ? 'completed'
+                                  : comp.isPublished
+                                    ? 'published'
+                                    : 'draft'
+                              }
                             >
-                              {comp.isPublished ? 'Published' : 'Draft'}
+                              {comp.isCompleted
+                                ? 'Completed'
+                                : comp.isPublished
+                                  ? 'Published'
+                                  : 'Draft'}
                             </StatusBadge>
                           </div>
 
-                          <h3 className="font-display mt-2 text-3xl font-extrabold tracking-wide text-white uppercase">
+                          <h3
+                            onClick={() => navigate(`/admin/competitions/${comp.id}`)}
+                            className="font-display mt-2 cursor-pointer text-3xl font-extrabold tracking-wide text-white uppercase transition-colors hover:text-[#F15A24]"
+                          >
                             {comp.name}
                           </h3>
                         </div>

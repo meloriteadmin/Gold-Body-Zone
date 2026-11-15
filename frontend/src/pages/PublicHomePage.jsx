@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import gymxHeroAthletes from '../assets/gymx-hero-athletes.jpg';
+import dewaliShreePoster from '../assets/images/Dewali Shree 2026 Bodybuilding Poster (1).png';
 import { CompetitionPosterCard } from '../components/public/CompetitionPosterCard.jsx';
-import { useParticipantAuth } from '../context/ParticipantAuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import './PublicHomeHero.css';
 
@@ -57,21 +57,9 @@ function FourPointStar({ color = '#090909', stroke = 'none', size = 20 }) {
 }
 
 export function PublicHomePage() {
-  const {
-    isAuthenticated,
-    registrationsByCompetitionId,
-    accessToken,
-    refreshRegistrations,
-  } = useParticipantAuth();
   const [competitions, setCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (accessToken) {
-      refreshRegistrations(accessToken).catch(() => {});
-    }
-  }, [accessToken, refreshRegistrations]);
 
   const loadCompetitions = async (force = false) => {
     setLoading(true);
@@ -165,7 +153,7 @@ export function PublicHomePage() {
           </div>
         </div>
 
-        {/* Centered Overlapping Hero Heading */}
+        {/* Centered Overlapping Hero Heading & Competition Posters */}
         <div className="gymx-hero-content">
           <h1 className="gymx-hero-title">
             <span className="gymx-hero-line gymx-text-orange">YOUR STAGE.</span>
@@ -174,7 +162,17 @@ export function PublicHomePage() {
               YOUR CHAMPIONSHIP.
             </span>
           </h1>
-          
+
+          {/* Dewali Shree 2026 Grand Championship Official Poster - Seamless on Hero Background */}
+          <div className="gymx-hero-poster-wrap">
+            <img
+              src={dewaliShreePoster}
+              alt="Dewali Shree 2026 - Men's Bodybuilding & Men's Physique Grand District Level Championship"
+              className="gymx-hero-poster-img"
+              loading="eager"
+              decoding="async"
+            />
+          </div>
         </div>
 
         {/* Bottom Overlapping Angled Orange & Grey Ticker Strips */}
@@ -340,7 +338,6 @@ export function PublicHomePage() {
                 <CompetitionPosterCard
                   key={comp.id}
                   competition={comp}
-                  userRegistration={registrationsByCompetitionId[comp.id] || null}
                 />
               ))}
             </div>

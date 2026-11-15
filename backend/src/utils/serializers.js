@@ -1,5 +1,19 @@
-export function serializeCompetition(competition) {
+import {
+  computeCompetitionStatus,
+  computeRegistrationStatus,
+} from './competitionValidation.js';
+
+export function serializeCompetition(competition, options = {}) {
   if (!competition) return null;
+
+  const paidRegistrations = (competition.registrations || []).filter(
+    (r) => r.paymentStatus === 'PAID' || r.payment?.status === 'PAID'
+  );
+  const totalRevenue = paidRegistrations.reduce((sum, r) => {
+    const amt = Number(r.payment?.amount ?? competition.registrationFee ?? 0);
+    return sum + (Number.isNaN(amt) ? 0 : amt);
+  }, 0);
+
   return {
     id: competition.id,
     slug: competition.slug,
@@ -26,18 +40,80 @@ export function serializeCompetition(competition) {
     publishedAt: competition.publishedAt
       ? competition.publishedAt.toISOString()
       : null,
+    isCompleted: Boolean(competition.isCompleted),
+    completedAt: competition.completedAt
+      ? competition.completedAt.toISOString()
+      : null,
+    isRegistrationClosed: Boolean(competition.isRegistrationClosed),
+    registrationClosedAt: competition.registrationClosedAt
+      ? competition.registrationClosedAt.toISOString()
+      : null,
+    status: computeCompetitionStatus(competition),
+    registrationStatus: computeRegistrationStatus(competition),
     isDefault: competition.isDefault,
     createdAt: competition.createdAt.toISOString(),
     updatedAt: competition.updatedAt.toISOString(),
-    categories: (competition.categories || []).map((cat) => ({
-      id: cat.id,
-      competitionId: cat.competitionId,
-      categoryType: cat.categoryType,
-      gender: cat.gender,
-      name: cat.name,
-      ruleNote: cat.ruleNote,
-      sortOrder: cat.sortOrder,
-    })),
+    registrationStats: {
+      total: (competition.registrations || []).length,
+      confirmed: (competition.registrations || []).filter(
+        (r) => r.registrationStatus === 'CONFIRMED'
+      ).length,
+      pending: (competition.registrations || []).filter(
+        (r) => r.registrationStatus === 'PENDING'
+      ).length,
+      paid: paidRegistrations.length,
+      unpaid: (competition.registrations || []).filter(
+        (r) => r.paymentStatus !== 'PAID' && r.payment?.status !== 'PAID'
+      ).length,
+      totalRevenue: Number(totalRevenue.toFixed(2)),
+    },
+    categories: (competition.categories || [])
+      .filter((cat) => {
+        if (
+          competition.competitionType === 'Bodybuilding' &&
+          /female\s*open/i.test(cat.name || '')
+        ) {
+          return false;
+        }
+        if (!options.filterIneligible) return true;
+        if (
+          ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+            competition.competitionType
+          )
+        ) {
+          if (cat.gender === 'FEMALE' || /female/i.test(cat.name || '')) {
+            return false;
+          }
+          if (
+            competition.competitionType === 'Bodybuilding' &&
+            (cat.categoryType === 'OPEN' || /open/i.test(cat.name || ''))
+          ) {
+            return false;
+          }
+        }
+        if (
+          competition.competitionType === "Women's Competition" &&
+          (cat.gender === 'MALE' || /male/i.test(cat.name || ''))
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((cat) => ({
+        id: cat.id,
+        competitionId: cat.competitionId,
+        categoryType: cat.categoryType,
+        gender: cat.gender,
+        name: cat.name,
+        ruleNote: cat.ruleNote,
+        sortOrder: cat.sortOrder,
+        groups: (cat.groups || []).map((g) => ({
+          id: g.id,
+          categoryId: g.categoryId,
+          name: g.name,
+          sortOrder: g.sortOrder,
+        })),
+      })),
   };
 }
 
@@ -64,13 +140,21 @@ export function serializeRegistration(registration) {
     registrationCode: registration.registrationCode,
     competitionId: registration.competitionId,
     categoryId: registration.categoryId,
+    groupId: registration.groupId || null,
+    groupName: registration.groupName || registration.group?.name || null,
     participantName: registration.participantName,
     email: registration.email,
     mobileNumber: registration.mobileNumber,
     gender: registration.gender,
     age: registration.age,
-    heightCm: Number(registration.heightCm),
-    weightKg: Number(registration.weightKg),
+    heightCm:
+      registration.heightCm !== null && registration.heightCm !== undefined
+        ? Number(registration.heightCm)
+        : null,
+    weightKg:
+      registration.weightKg !== null && registration.weightKg !== undefined
+        ? Number(registration.weightKg)
+        : null,
     district: registration.district,
     representingType: registration.representingType || 'GYM',
     gymName: registration.gymName,
@@ -79,6 +163,27 @@ export function serializeRegistration(registration) {
       : null,
     registrationStatus: registration.registrationStatus,
     paymentStatus: registration.paymentStatus,
+    isManual: Boolean(
+      registration.isManual ||
+        registration.payment?.verificationSource === 'ADMIN_MANUAL'
+    ),
+    source: Boolean(
+      registration.isManual ||
+        registration.payment?.verificationSource === 'ADMIN_MANUAL'
+    )
+      ? 'MANUAL'
+      : 'ONLINE',
+    paymentMethod:
+      registration.paymentMethod ||
+      (registration.payment?.verificationSource === 'ADMIN_MANUAL'
+        ? registration.payment?.currency === 'CASH'
+          ? 'Cash'
+          : registration.payment?.currency === 'UPI'
+            ? 'UPI'
+            : 'Pending'
+        : registration.payment?.cashfreeOrderId
+          ? 'Online'
+          : 'N/A'),
     createdAt: registration.createdAt.toISOString(),
     updatedAt: registration.updatedAt.toISOString(),
     competition: registration.competition
@@ -106,11 +211,17 @@ export function serializeRegistration(registration) {
           categoryType: registration.category.categoryType,
         }
       : null,
+    group: registration.group
+      ? {
+          id: registration.group.id,
+          name: registration.group.name,
+        }
+      : null,
     payment: registration.payment
       ? {
           id: registration.payment.id,
-          cashfreeOrderId: registration.payment.cashfreeOrderId,
-          cashfreePaymentId: registration.payment.cashfreePaymentId,
+          cashfreeOrderId: registration.payment.cashfreeOrderId || null,
+          cashfreePaymentId: registration.payment.cashfreePaymentId || null,
           amount:
             registration.payment.amount !== null &&
             registration.payment.amount !== undefined
@@ -121,6 +232,10 @@ export function serializeRegistration(registration) {
           paidAt: registration.payment.paidAt
             ? registration.payment.paidAt.toISOString()
             : null,
+          verifiedAt: registration.payment.verifiedAt
+            ? registration.payment.verifiedAt.toISOString()
+            : null,
+          verificationSource: registration.payment.verificationSource || null,
         }
       : null,
   };
@@ -137,12 +252,41 @@ export function serializePublicRegistration(registration) {
     registrationCode: registration.registrationCode,
     competitionId: registration.competitionId,
     categoryId: registration.categoryId,
+    groupId: registration.groupId || null,
+    groupName: registration.groupName || registration.group?.name || null,
     participantName: registration.participantName,
     representingType: registration.representingType || 'GYM',
     gymName: registration.gymName,
     registrationStatus: registration.registrationStatus,
     paymentStatus: registration.paymentStatus,
+    isManual: Boolean(
+      registration.isManual ||
+        registration.payment?.verificationSource === 'ADMIN_MANUAL'
+    ),
+    source: Boolean(
+      registration.isManual ||
+        registration.payment?.verificationSource === 'ADMIN_MANUAL'
+    )
+      ? 'MANUAL'
+      : 'ONLINE',
+    paymentMethod:
+      registration.paymentMethod ||
+      (registration.payment?.verificationSource === 'ADMIN_MANUAL'
+        ? registration.payment?.currency === 'CASH'
+          ? 'Cash'
+          : registration.payment?.currency === 'UPI'
+            ? 'UPI'
+            : 'Pending'
+        : registration.payment?.cashfreeOrderId
+          ? 'Online'
+          : 'N/A'),
     createdAt: registration.createdAt.toISOString(),
+    group: registration.group
+      ? {
+          id: registration.group.id,
+          name: registration.group.name,
+        }
+      : null,
     competition: registration.competition
       ? {
           id: registration.competition.id,

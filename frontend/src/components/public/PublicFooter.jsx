@@ -1,8 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useParticipantAuth } from '../../context/ParticipantAuthContext.jsx';
 
 export function PublicFooter() {
-  const { isAuthenticated } = useParticipantAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -44,7 +42,7 @@ export function PublicFooter() {
             <button
               type="button"
               onClick={handleAboutClick}
-              className="transition-colors hover:text-[#F15A24]"
+              className="cursor-pointer transition-colors hover:text-[#F15A24]"
             >
               About
             </button>
@@ -53,12 +51,6 @@ export function PublicFooter() {
               className="transition-colors hover:text-[#F15A24]"
             >
               Competitions
-            </Link>
-            <Link
-              to={isAuthenticated ? '/profile' : '/login'}
-              className="transition-colors hover:text-[#F15A24]"
-            >
-              {isAuthenticated ? 'Profile' : 'Login'}
             </Link>
           </nav>
         </div>

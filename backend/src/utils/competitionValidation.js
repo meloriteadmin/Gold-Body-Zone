@@ -5,6 +5,47 @@ const VALID_GENDER_ELIGIBILITY = new Set(['ALL', 'MALE_ONLY', 'FEMALE_ONLY']);
 const VALID_CATEGORY_GENDER = new Set(['MALE', 'FEMALE', 'OPEN']);
 const VALID_CATEGORY_TYPE = new Set(['WEIGHT', 'HEIGHT', 'OPEN']);
 
+export const CLOSING_SOON_THRESHOLD_DAYS = 3;
+export const CLOSING_SOON_THRESHOLD_MS =
+  CLOSING_SOON_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+
+export function computeCompetitionStatus(competition) {
+  if (!competition) return 'DRAFT';
+  if (competition.isCompleted) return 'COMPLETED';
+  if (!competition.isPublished) {
+    return competition.publishedAt ? 'UNPUBLISHED' : 'DRAFT';
+  }
+  if (competition.eventDate) {
+    const eventDay = new Date(competition.eventDate);
+    const now = new Date();
+    const isSameDay =
+      eventDay.getUTCFullYear() === now.getUTCFullYear() &&
+      eventDay.getUTCMonth() === now.getUTCMonth() &&
+      eventDay.getUTCDate() === now.getUTCDate();
+    if (isSameDay) return 'LIVE';
+  }
+  return 'PUBLISHED';
+}
+
+export function computeRegistrationStatus(competition) {
+  if (!competition) return 'CLOSED';
+  if (competition.isCompleted) return 'CLOSED';
+  if (!competition.isPublished) return 'CLOSED';
+  if (competition.isRegistrationClosed) return 'CLOSED';
+
+  if (competition.registrationDeadline) {
+    const deadline = new Date(competition.registrationDeadline);
+    deadline.setUTCHours(23, 59, 59, 999);
+    const now = new Date();
+    if (now > deadline) return 'CLOSED';
+    if (deadline.getTime() - now.getTime() <= CLOSING_SOON_THRESHOLD_MS) {
+      return 'CLOSING_SOON';
+    }
+  }
+
+  return 'OPEN';
+}
+
 export function slugify(value) {
   return String(value || '')
     .trim()
@@ -49,6 +90,21 @@ function parseOptionalInt(value, fieldName) {
   return num;
 }
 
+export function normalizeGroupInput(grp, index = 0) {
+  const name = typeof grp?.name === 'string' ? grp.name.trim() : '';
+  if (!name) {
+    throw new HttpError(400, 'Each group/division must have a non-empty name.');
+  }
+  const id =
+    typeof grp?.id === 'string' && grp.id.trim() ? grp.id.trim() : undefined;
+
+  return {
+    ...(id ? { id } : {}),
+    name,
+    sortOrder: Number.isInteger(grp?.sortOrder) ? grp.sortOrder : index + 1,
+  };
+}
+
 export function normalizeCategoryInput(cat, index = 0) {
   const name = typeof cat?.name === 'string' ? cat.name.trim() : '';
   if (!name) {
@@ -69,6 +125,10 @@ export function normalizeCategoryInput(cat, index = 0) {
   const id =
     typeof cat?.id === 'string' && cat.id.trim() ? cat.id.trim() : undefined;
 
+  const groups = Array.isArray(cat?.groups)
+    ? cat.groups.map((grp, gIdx) => normalizeGroupInput(grp, gIdx))
+    : [];
+
   return {
     ...(id ? { id } : {}),
     categoryType,
@@ -76,6 +136,7 @@ export function normalizeCategoryInput(cat, index = 0) {
     name,
     ruleNote,
     sortOrder: Number.isInteger(cat?.sortOrder) ? cat.sortOrder : index + 1,
+    groups,
   };
 }
 
@@ -163,6 +224,16 @@ export function validateCompetitionPayload(body, { isUpdate = false } = {}) {
     data.publishedAt = data.isPublished ? new Date() : null;
   }
 
+  if (body.isCompleted !== undefined) {
+    data.isCompleted = Boolean(body.isCompleted);
+    data.completedAt = data.isCompleted ? new Date() : null;
+  }
+
+  if (body.isRegistrationClosed !== undefined) {
+    data.isRegistrationClosed = Boolean(body.isRegistrationClosed);
+    data.registrationClosedAt = data.isRegistrationClosed ? new Date() : null;
+  }
+
   let categories;
   if (body.categories !== undefined) {
     if (!Array.isArray(body.categories)) {
@@ -171,6 +242,57 @@ export function validateCompetitionPayload(body, { isUpdate = false } = {}) {
     categories = body.categories.map((cat, idx) =>
       normalizeCategoryInput(cat, idx)
     );
+  }
+
+  // Enforce type-specific gender and category constraints
+  const compType = data.competitionType || (isUpdate ? undefined : body.competitionType);
+  if (compType === "Women's Competition") {
+    data.genderEligibility = 'FEMALE_ONLY';
+    if (categories) {
+      for (const cat of categories) {
+        if (cat.categoryType !== 'OPEN') {
+          throw new HttpError(
+            400,
+            "Women's Competition only allows Open categories (no height or weight categories)."
+          );
+        }
+        if (cat.gender === 'MALE') {
+          throw new HttpError(
+            400,
+            "Women's Competition cannot have Male categories."
+          );
+        }
+        cat.gender = 'FEMALE';
+      }
+    }
+  } else if (
+    compType === 'Bodybuilding' ||
+    compType === "Men's Physique" ||
+    compType === 'Masters'
+  ) {
+    data.genderEligibility = 'MALE_ONLY';
+    if (categories) {
+      for (const cat of categories) {
+        if (cat.gender === 'FEMALE' || /female/i.test(cat.name || '')) {
+          throw new HttpError(
+            400,
+            `${compType} is restricted to Male participants and cannot have Female categories.`
+          );
+        }
+        if (
+          compType === 'Bodybuilding' &&
+          (cat.categoryType === 'OPEN' || /open/i.test(cat.name || ''))
+        ) {
+          throw new HttpError(
+            400,
+            'Bodybuilding only allows Male Weight categories (no Female Open or Open categories).'
+          );
+        }
+        if (cat.gender === 'OPEN') {
+          cat.gender = 'MALE';
+        }
+      }
+    }
   }
 
   return { data, categories };

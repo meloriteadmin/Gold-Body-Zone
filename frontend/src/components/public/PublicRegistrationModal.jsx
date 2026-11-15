@@ -14,7 +14,6 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useParticipantAuth } from '../../context/ParticipantAuthContext.jsx';
 import { apiClient } from '../../lib/apiClient.js';
 import {
   launchCashfreeCheckout,
@@ -68,8 +67,6 @@ export function PublicRegistrationModal({
   onClose,
   onRegistrationUpdated,
 }) {
-  const { accessToken, user, refreshRegistrations } = useParticipantAuth();
-
   const [selectedCompetitionId, setSelectedCompetitionId] = useState('');
   const [participantName, setParticipantName] = useState('');
   const [email, setEmail] = useState('');
@@ -83,6 +80,7 @@ export function PublicRegistrationModal({
   const [gymNameInput, setGymNameInput] = useState('');
   const [individualOption, setIndividualOption] = useState('Other / Individual');
   const [categoryId, setCategoryId] = useState('');
+  const [groupId, setGroupId] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -112,16 +110,56 @@ export function PublicRegistrationModal({
     );
   }, [selectedCompetitionId, openCompetitions, competition]);
 
+  const isWomensCompetition = useMemo(() => {
+    return (
+      activeCompetition?.competitionType === "Women's Competition" ||
+      activeCompetition?.genderEligibility === 'FEMALE_ONLY'
+    );
+  }, [activeCompetition]);
+
   const allowedGenders = useMemo(() => {
     if (!activeCompetition) return ['MALE', 'FEMALE', 'OTHER'];
-    if (activeCompetition.genderEligibility === 'MALE_ONLY') return ['MALE'];
-    if (activeCompetition.genderEligibility === 'FEMALE_ONLY') return ['FEMALE'];
+    if (
+      activeCompetition.genderEligibility === 'MALE_ONLY' ||
+      ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+        activeCompetition.competitionType
+      )
+    ) {
+      return ['MALE'];
+    }
+    if (isWomensCompetition) {
+      return ['FEMALE'];
+    }
     return ['MALE', 'FEMALE', 'OTHER'];
-  }, [activeCompetition]);
+  }, [activeCompetition, isWomensCompetition]);
 
   const compatibleCategories = useMemo(() => {
     if (!activeCompetition?.categories) return [];
     return activeCompetition.categories.filter((cat) => {
+      if (
+        ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+          activeCompetition.competitionType
+        )
+      ) {
+        if (cat.gender === 'FEMALE' || /female/i.test(cat.name || '')) {
+          return false;
+        }
+        if (
+          activeCompetition.competitionType === 'Bodybuilding' &&
+          (/open/i.test(cat.name || '') || cat.categoryType === 'OPEN')
+        ) {
+          return false;
+        }
+        return cat.gender === 'MALE' || cat.gender === 'OPEN';
+      }
+
+      if (activeCompetition.competitionType === "Women's Competition") {
+        if (cat.gender === 'MALE' || /male/i.test(cat.name || '')) {
+          return false;
+        }
+        return cat.gender === 'FEMALE' || cat.gender === 'OPEN';
+      }
+
       if (cat.gender === 'OPEN') return true;
       return cat.gender === gender;
     });
@@ -140,8 +178,8 @@ export function PublicRegistrationModal({
   useEffect(() => {
     if (!competition) return;
     setSelectedCompetitionId(competition.id);
-    setParticipantName(user?.user_metadata?.full_name || '');
-    setEmail(user?.email || '');
+    setParticipantName('');
+    setEmail('');
     setMobileNumber('');
     const initialGender =
       competition.genderEligibility === 'FEMALE_ONLY' ? 'FEMALE' : 'MALE';
@@ -176,20 +214,24 @@ export function PublicRegistrationModal({
       return;
     }
 
-    const isFemale = gender === 'FEMALE';
-    const femaleOpen = compatibleCategories.find(
-      (c) => c.gender === 'FEMALE' && c.categoryType === 'OPEN'
-    );
-    if (isFemale && femaleOpen) {
-      setCategoryId(femaleOpen.id);
+    const isWomens =
+      activeCompetition?.competitionType === "Women's Competition" ||
+      isWomensCompetition;
+    if (isWomens && compatibleCategories.length > 0) {
+      setCategoryId(compatibleCategories[0].id);
       return;
     }
 
     const stillValid = compatibleCategories.some((c) => c.id === categoryId);
     if (!stillValid) {
       setCategoryId('');
+      setGroupId('');
     }
   }, [compatibleCategories, categoryId, activeCompetition, gender]);
+
+  const selectedCategory = useMemo(() => {
+    return compatibleCategories.find((c) => c.id === categoryId) || null;
+  }, [compatibleCategories, categoryId]);
 
   const categorySelectLabel = useMemo(() => {
     if (compatibleCategories.some((c) => c.categoryType === 'WEIGHT')) {
@@ -238,14 +280,26 @@ export function PublicRegistrationModal({
       errors.age = ageCheck.message;
     }
 
-    const heightNum = Number(heightCm);
-    if (heightCm === '' || Number.isNaN(heightNum) || heightNum < 80 || heightNum > 260) {
-      errors.heightCm = 'Height must be between 80 and 260 cm.';
-    }
+    if (!isWomensCompetition) {
+      const heightNum = Number(heightCm);
+      if (
+        heightCm === '' ||
+        Number.isNaN(heightNum) ||
+        heightNum < 80 ||
+        heightNum > 260
+      ) {
+        errors.heightCm = 'Height must be between 80 and 260 cm.';
+      }
 
-    const weightNum = Number(weightKg);
-    if (weightKg === '' || Number.isNaN(weightNum) || weightNum < 25 || weightNum > 300) {
-      errors.weightKg = 'Weight must be between 25 and 300 kg.';
+      const weightNum = Number(weightKg);
+      if (
+        weightKg === '' ||
+        Number.isNaN(weightNum) ||
+        weightNum < 25 ||
+        weightNum > 300
+      ) {
+        errors.weightKg = 'Weight must be between 25 and 300 kg.';
+      }
     }
 
     if (!activeCompetition) {
@@ -313,21 +367,15 @@ export function PublicRegistrationModal({
         );
       } else if (checkoutOutcome?.paymentDetails && res.cashfree?.orderId) {
         // Verify with backend even after modal completion — never trust frontend payment success alone.
-        const verifyRes = await apiClient.verifyOrderPayment(
-          {
-            orderId: res.cashfree.orderId,
-            statusToken: res.statusToken,
-          },
-          accessToken
-        );
+        const verifyRes = await apiClient.verifyOrderPayment({
+          orderId: res.cashfree.orderId,
+          statusToken: res.statusToken,
+        });
         setPaymentResult({
           registration: verifyRes.registration,
           cashfree: res.cashfree,
           statusToken: verifyRes.statusToken,
         });
-        if (accessToken) {
-          await refreshRegistrations().catch(() => {});
-        }
         if (onRegistrationUpdated) {
           onRegistrationUpdated(verifyRes.registration);
         }
@@ -353,13 +401,22 @@ export function PublicRegistrationModal({
       const payload = {
         competitionId: activeCompetition.id,
         categoryId,
+        groupId: groupId || null,
         participantName: cleanText(participantName),
         email: cleanText(email).toLowerCase(),
         mobileNumber: cleanText(mobileNumber),
         gender,
         age: Number.parseInt(age, 10),
-        heightCm: Number(heightCm),
-        weightKg: Number(weightKg),
+        heightCm: isWomensCompetition
+          ? null
+          : heightCm
+            ? Number(Number(heightCm).toFixed(2))
+            : null,
+        weightKg: isWomensCompetition
+          ? null
+          : weightKg
+            ? Number(Number(weightKg).toFixed(2))
+            : null,
         district: cleanText(district),
         representingType,
         gymName:
@@ -368,7 +425,7 @@ export function PublicRegistrationModal({
             : cleanText(gymNameInput),
       };
 
-      const res = await apiClient.submitPublicRegistration(payload, accessToken);
+      const res = await apiClient.submitPublicRegistration(payload);
       await runCashfreeOrStoreResult(res);
     } catch (err) {
       setFormError(err.message || 'Failed to submit registration.');
@@ -384,8 +441,7 @@ export function PublicRegistrationModal({
     try {
       const res = await apiClient.retryRegistrationPayment(
         paymentResult.registration.id,
-        { statusToken: paymentResult.statusToken },
-        accessToken
+        { statusToken: paymentResult.statusToken }
       );
       await runCashfreeOrStoreResult(res);
     } catch (err) {
@@ -690,7 +746,6 @@ export function PublicRegistrationModal({
                       id="reg-email"
                       type="email"
                       required
-                      readOnly={Boolean(user?.email)}
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
@@ -702,8 +757,7 @@ export function PublicRegistrationModal({
                         fieldErrors.email ? 'err-email' : undefined
                       }
                       className={getInputClassName(
-                        Boolean(fieldErrors.email),
-                        user?.email ? 'cursor-default opacity-80' : ''
+                        Boolean(fieldErrors.email)
                       )}
                     />
                     <FieldError id="err-email" message={fieldErrors.email} />
@@ -771,93 +825,95 @@ export function PublicRegistrationModal({
                 </div>
               </section>
 
-              {/* Section 2: Physical Information */}
-              <section
-                aria-labelledby="section-physical-info"
-                className="rounded-2xl border border-white/[0.08] bg-[#222222] p-4 sm:p-5"
-              >
-                <div className="mb-4 flex items-center gap-2 border-b border-white/[0.06] pb-3">
-                  <Ruler className="h-4 w-4 text-[#F15A24]" />
-                  <h3
-                    id="section-physical-info"
-                    className="text-sm font-bold tracking-wider text-white uppercase"
-                  >
-                    2. Physical Information
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="reg-height"
-                      className="mb-1.5 block text-xs font-semibold text-zinc-200"
+              {/* Section 2: Physical Information (Hidden for Women's Competition) */}
+              {!isWomensCompetition && (
+                <section
+                  aria-labelledby="section-physical-info"
+                  className="rounded-2xl border border-white/[0.08] bg-[#222222] p-4 sm:p-5"
+                >
+                  <div className="mb-4 flex items-center gap-2 border-b border-white/[0.06] pb-3">
+                    <Ruler className="h-4 w-4 text-[#F15A24]" />
+                    <h3
+                      id="section-physical-info"
+                      className="text-sm font-bold tracking-wider text-white uppercase"
                     >
-                      Height (cm) <RequiredMark />
-                    </label>
-                    <input
-                      id="reg-height"
-                      type="number"
-                      required
-                      min="80"
-                      max="260"
-                      step="0.1"
-                      inputMode="decimal"
-                      value={heightCm}
-                      onChange={(e) => {
-                        setHeightCm(e.target.value);
-                        clearFieldError('heightCm');
-                      }}
-                      placeholder="e.g. 175"
-                      aria-invalid={Boolean(fieldErrors.heightCm)}
-                      aria-describedby={
-                        fieldErrors.heightCm ? 'err-height' : undefined
-                      }
-                      className={getInputClassName(
-                        Boolean(fieldErrors.heightCm)
-                      )}
-                    />
-                    <FieldError
-                      id="err-height"
-                      message={fieldErrors.heightCm}
-                    />
+                      2. Physical Information
+                    </h3>
                   </div>
 
-                  <div>
-                    <label
-                      htmlFor="reg-weight"
-                      className="mb-1.5 block text-xs font-semibold text-zinc-200"
-                    >
-                      Weight (kg) <RequiredMark />
-                    </label>
-                    <input
-                      id="reg-weight"
-                      type="number"
-                      required
-                      min="25"
-                      max="300"
-                      step="0.1"
-                      inputMode="decimal"
-                      value={weightKg}
-                      onChange={(e) => {
-                        setWeightKg(e.target.value);
-                        clearFieldError('weightKg');
-                      }}
-                      placeholder="e.g. 72.5"
-                      aria-invalid={Boolean(fieldErrors.weightKg)}
-                      aria-describedby={
-                        fieldErrors.weightKg ? 'err-weight' : undefined
-                      }
-                      className={getInputClassName(
-                        Boolean(fieldErrors.weightKg)
-                      )}
-                    />
-                    <FieldError
-                      id="err-weight"
-                      message={fieldErrors.weightKg}
-                    />
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="reg-height"
+                        className="mb-1.5 block text-xs font-semibold text-zinc-200"
+                      >
+                        Height (cm) <RequiredMark />
+                      </label>
+                      <input
+                        id="reg-height"
+                        type="number"
+                        required
+                        min="80"
+                        max="260"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={heightCm}
+                        onChange={(e) => {
+                          setHeightCm(e.target.value);
+                          clearFieldError('heightCm');
+                        }}
+                        placeholder="e.g. 175"
+                        aria-invalid={Boolean(fieldErrors.heightCm)}
+                        aria-describedby={
+                          fieldErrors.heightCm ? 'err-height' : undefined
+                        }
+                        className={getInputClassName(
+                          Boolean(fieldErrors.heightCm)
+                        )}
+                      />
+                      <FieldError
+                        id="err-height"
+                        message={fieldErrors.heightCm}
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="reg-weight"
+                        className="mb-1.5 block text-xs font-semibold text-zinc-200"
+                      >
+                        Weight (kg) <RequiredMark />
+                      </label>
+                      <input
+                        id="reg-weight"
+                        type="number"
+                        required
+                        min="25"
+                        max="300"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={weightKg}
+                        onChange={(e) => {
+                          setWeightKg(e.target.value);
+                          clearFieldError('weightKg');
+                        }}
+                        placeholder="e.g. 72.5"
+                        aria-invalid={Boolean(fieldErrors.weightKg)}
+                        aria-describedby={
+                          fieldErrors.weightKg ? 'err-weight' : undefined
+                        }
+                        className={getInputClassName(
+                          Boolean(fieldErrors.weightKg)
+                        )}
+                      />
+                      <FieldError
+                        id="err-weight"
+                        message={fieldErrors.weightKg}
+                      />
+                    </div>
                   </div>
-                </div>
-              </section>
+                </section>
+              )}
 
               {/* Section 3: Representation Information */}
               <section
@@ -1078,7 +1134,7 @@ export function PublicRegistrationModal({
                         </div>
                       )}
                     </div>
-                  ) : gender === 'FEMALE' && (activeCompetition?.competitionType === 'Bodybuilding' || activeCompetition?.competitionType === "Men's Physique") ? (
+                  ) : isWomensCompetition ? (
                     <div>
                       <label className="mb-1.5 block text-xs font-semibold text-zinc-200">
                         Category Selection <RequiredMark />

@@ -4,6 +4,7 @@ import {
   ClipboardList,
   Dumbbell,
   Gavel,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -29,6 +30,12 @@ const NAV_ITEMS = [
     icon: ClipboardList,
     end: false,
   },
+  {
+    to: '/admin/history',
+    label: 'History',
+    icon: History,
+    end: false,
+  },
   { to: '/admin/judge', label: 'Judge', icon: Gavel, end: false },
   {
     to: '/admin/profile',
@@ -42,6 +49,7 @@ const ROUTE_TITLES = {
   '/admin': 'Dashboard',
   '/admin/competitions': 'Manage Competitions',
   '/admin/registrations': 'Registrations',
+  '/admin/history': 'Competition History',
   '/admin/judge': 'Judge',
   '/admin/profile': 'Admin Profile',
 };

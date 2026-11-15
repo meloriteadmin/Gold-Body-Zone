@@ -1,7 +1,24 @@
+import { env } from '../config/env.js';
 import { getPrismaClient } from '../config/prisma.js';
+import {
+  buildCashfreeOrderId,
+  createCashfreeOrder,
+  createCashfreeUpiQr,
+  fetchCashfreeOrderState,
+} from '../services/cashfree.service.js';
 import { sendRegistrationConfirmationEmail } from '../services/email.service.js';
+import {
+  generateRegistrationsCsv,
+  generateRegistrationsExcel,
+  generateRegistrationsPdf,
+} from '../services/export.service.js';
+import { settleVerifiedPayment } from '../services/paymentSettlement.service.js';
 import { HttpError } from '../utils/httpError.js';
-import { validateRegistrationStatusUpdate } from '../utils/registrationValidation.js';
+import {
+  generateRegistrationCode,
+  validatePublicRegistration,
+  validateRegistrationStatusUpdate,
+} from '../utils/registrationValidation.js';
 import { serializeRegistration } from '../utils/serializers.js';
 
 const REGISTRATION_INCLUDE = {
@@ -19,6 +36,12 @@ const REGISTRATION_INCLUDE = {
       name: true,
       gender: true,
       categoryType: true,
+    },
+  },
+  group: {
+    select: {
+      id: true,
+      name: true,
     },
   },
   payment: true,
@@ -51,6 +74,10 @@ export async function listRegistrations(req, res, next) {
       typeof req.query.categoryId === 'string'
         ? req.query.categoryId.trim()
         : '';
+    const groupId =
+      typeof req.query.groupId === 'string'
+        ? req.query.groupId.trim()
+        : '';
     const registrationStatus =
       typeof req.query.registrationStatus === 'string'
         ? req.query.registrationStatus.trim().toUpperCase()
@@ -58,6 +85,10 @@ export async function listRegistrations(req, res, next) {
     const paymentStatus =
       typeof req.query.paymentStatus === 'string'
         ? req.query.paymentStatus.trim().toUpperCase()
+        : '';
+    const source =
+      typeof req.query.source === 'string'
+        ? req.query.source.trim().toUpperCase()
         : '';
     const sortOrder = req.query.sort === 'oldest' ? 'asc' : 'desc';
 
@@ -86,6 +117,10 @@ export async function listRegistrations(req, res, next) {
       where.categoryId = categoryId;
     }
 
+    if (groupId) {
+      where.groupId = groupId;
+    }
+
     if (
       registrationStatus &&
       VALID_REGISTRATION_STATUSES.has(registrationStatus)
@@ -95,6 +130,12 @@ export async function listRegistrations(req, res, next) {
 
     if (paymentStatus && VALID_PAYMENT_STATUSES.has(paymentStatus)) {
       where.paymentStatus = paymentStatus;
+    }
+
+    if (source === 'ONLINE') {
+      where.isManual = false;
+    } else if (source === 'MANUAL') {
+      where.isManual = true;
     }
 
     const [total, registrations] = await Promise.all([
@@ -231,6 +272,432 @@ export async function resendRegistrationConfirmationEmail(req, res, next) {
       sent: true,
       alreadySent: false,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function validateCompetitionAgeEligibility(ageEligibility, participantAge) {
+  if (!ageEligibility) return;
+  const aboveMatch = /\babove\s+(\d+)\b/i.exec(ageEligibility);
+  if (aboveMatch) {
+    const threshold = Number.parseInt(aboveMatch[1], 10);
+    if (participantAge <= threshold) {
+      throw new HttpError(
+        400,
+        `Ineligible: ${ageEligibility} (participant must be above ${threshold} years).`
+      );
+    }
+  }
+}
+
+export async function createManualRegistration(req, res, next) {
+  try {
+    const prisma = getPrismaClient();
+
+    const competitionId = req.body?.competitionId;
+    if (!competitionId) {
+      throw new HttpError(400, 'Competition is required.');
+    }
+
+    const competition = await prisma.competition.findUnique({
+      where: { id: competitionId },
+      include: {
+        categories: {
+          include: {
+            groups: true,
+          },
+        },
+      },
+    });
+
+    if (!competition) {
+      throw new HttpError(404, 'Competition not found.');
+    }
+
+    const VALID_MANUAL_PAYMENT_METHODS = new Set(['CASH', 'UPI', 'PENDING']);
+    const rawMethod =
+      typeof req.body?.paymentMethod === 'string'
+        ? req.body.paymentMethod.trim().toUpperCase()
+        : '';
+    if (!VALID_MANUAL_PAYMENT_METHODS.has(rawMethod)) {
+      throw new HttpError(
+        400,
+        'Invalid payment method. Expected Cash, UPI, or Pending.'
+      );
+    }
+
+    const validated = validatePublicRegistration(req.body, competition);
+
+    validateCompetitionAgeEligibility(
+      competition.ageEligibility,
+      validated.age
+    );
+
+    const targetCategory = competition.categories.find(
+      (c) => c.id === validated.categoryId
+    );
+    if (!targetCategory) {
+      throw new HttpError(
+        400,
+        'The selected category does not belong to this competition.'
+      );
+    }
+
+    let targetGroup = null;
+    if (validated.groupId) {
+      targetGroup = (targetCategory.groups || []).find(
+        (g) => g.id === validated.groupId
+      );
+      if (!targetGroup) {
+        throw new HttpError(
+          400,
+          'The selected group does not belong to the chosen category.'
+        );
+      }
+    }
+
+    const existing = await prisma.registration.findUnique({
+      where: {
+        competitionId_email: {
+          competitionId: competition.id,
+          email: validated.email,
+        },
+      },
+      include: { payment: true },
+    });
+
+    if (existing && existing.paymentStatus === 'PAID') {
+      throw new HttpError(
+        409,
+        `Participant with email "${validated.email}" is already registered and confirmed for this competition.`
+      );
+    }
+
+    const registrationCode = generateRegistrationCode();
+
+    const isPaid = rawMethod === 'CASH';
+    const regStatus = isPaid ? 'CONFIRMED' : 'PENDING';
+    const payStatus = isPaid ? 'PAID' : 'PENDING';
+    const cashfreeOrderId = rawMethod === 'UPI' ? buildCashfreeOrderId(registrationCode) : null;
+    const verificationSource =
+      rawMethod === 'UPI'
+        ? 'ADMIN_MANUAL_UPI_QR'
+        : 'ADMIN_MANUAL';
+
+    const registration = await prisma.$transaction(async (tx) => {
+      if (existing) {
+        await tx.payment.deleteMany({ where: { registrationId: existing.id } });
+        await tx.registration.delete({ where: { id: existing.id } });
+      }
+
+      return tx.registration.create({
+        data: {
+          registrationCode,
+          competitionId: competition.id,
+          categoryId: targetCategory.id,
+          groupId: targetGroup?.id || null,
+          groupName: targetGroup?.name || null,
+          participantName: validated.participantName,
+          email: validated.email,
+          mobileNumber: validated.mobileNumber,
+          gender: validated.gender,
+          age: validated.age,
+          heightCm: validated.heightCm,
+          weightKg: validated.weightKg,
+          district: validated.district,
+          representingType: validated.representingType,
+          gymName: validated.gymName,
+          registrationStatus: regStatus,
+          paymentStatus: payStatus,
+          isManual: true,
+          paymentMethod: rawMethod,
+          payment: {
+            create: {
+              amount: competition.registrationFee,
+              currency: 'INR',
+              status: payStatus,
+              cashfreeOrderId,
+              paidAt: isPaid ? new Date() : null,
+              verifiedAt: isPaid ? new Date() : null,
+              verificationSource,
+            },
+          },
+        },
+        include: REGISTRATION_INCLUDE,
+      });
+    });
+
+    if (isPaid) {
+      sendRegistrationConfirmationEmail(registration.id).catch((e) => {
+        console.warn(
+          `[email] Failed to send confirmation email for manual cash registration ${registration.id}:`,
+          e.message
+        );
+      });
+    }
+
+    let upiQr = null;
+    if (rawMethod === 'UPI') {
+      if (env.isCashfreeConfigured) {
+        try {
+          const cfOrder = await createCashfreeOrder({
+            orderId: cashfreeOrderId,
+            amount: competition.registrationFee,
+            customerId: registration.id,
+            customerName: registration.participantName,
+            customerEmail: registration.email,
+            customerPhone: registration.mobileNumber,
+            returnUrl: `${env.appBaseUrl || 'https://ironstage.fit'}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
+          });
+
+          const qrRes = await createCashfreeUpiQr({
+            paymentSessionId: cfOrder.paymentSessionId,
+          });
+
+          upiQr = {
+            orderId: cashfreeOrderId,
+            cfPaymentId: qrRes.cfPaymentId,
+            qrDataUrl: qrRes.qrDataUrl,
+            amount: Number(competition.registrationFee),
+            paymentSessionId: cfOrder.paymentSessionId,
+          };
+        } catch (cfErr) {
+          await prisma.payment.deleteMany({ where: { registrationId: registration.id } }).catch(() => {});
+          await prisma.registration.delete({ where: { id: registration.id } }).catch(() => {});
+          throw new HttpError(
+            cfErr.status || 502,
+            `Failed to generate Cashfree UPI QR: ${cfErr.message || 'Payment gateway communication failure.'}`
+          );
+        }
+      } else {
+        const QRCode = (await import('qrcode')).default;
+        const dummyPayload = `upi://pay?pa=cashfree@icici&pn=IRONSTAGE&tr=${cashfreeOrderId}&am=${competition.registrationFee}&cu=INR`;
+        const qrDataUrl = await QRCode.toDataURL(dummyPayload, { margin: 2, width: 320 });
+        upiQr = {
+          orderId: cashfreeOrderId,
+          cfPaymentId: null,
+          qrDataUrl,
+          amount: Number(competition.registrationFee),
+          paymentSessionId: `session-${cashfreeOrderId}`,
+        };
+      }
+    }
+
+    res.status(201).json({
+      registration: serializeRegistration(registration),
+      upiQr,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Verify payment status with Cashfree for a registration.
+ * If Cashfree reports PAID, automatically settles the payment and sends confirmation email.
+ */
+export async function verifyRegistrationPayment(req, res, next) {
+  try {
+    const prisma = getPrismaClient();
+    const registration = await prisma.registration.findUnique({
+      where: { id: req.params.id },
+      include: REGISTRATION_INCLUDE,
+    });
+
+    if (!registration) {
+      throw new HttpError(404, 'Registration not found.');
+    }
+
+    if (registration.paymentStatus === 'PAID') {
+      return res.status(200).json({
+        isPaid: true,
+        status: 'PAID',
+        registration: serializeRegistration(registration),
+      });
+    }
+
+    const cashfreeOrderId = registration.payment?.cashfreeOrderId;
+    if (!cashfreeOrderId) {
+      return res.status(200).json({
+        isPaid: false,
+        status: registration.paymentStatus,
+        registration: serializeRegistration(registration),
+      });
+    }
+
+    const cfState = await fetchCashfreeOrderState(cashfreeOrderId);
+
+    if (cfState.nextStatus === 'PAID') {
+      const settled = await settleVerifiedPayment({
+        orderId: cashfreeOrderId,
+        nextStatus: 'PAID',
+        cfPaymentId: cfState.cfPaymentId,
+        paymentAmount: cfState.paymentAmount,
+        paymentTime: cfState.paymentTime,
+        verificationSource: 'ADMIN_MANUAL_UPI_QR_VERIFY',
+      });
+
+      return res.status(200).json({
+        isPaid: true,
+        status: 'PAID',
+        registration: serializeRegistration(settled),
+      });
+    }
+
+    res.status(200).json({
+      isPaid: false,
+      status: cfState.nextStatus || registration.paymentStatus,
+      orderStatus: cfState.orderStatus,
+      registration: serializeRegistration(registration),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Export competition registration list in Excel (.xlsx), CSV (.csv), or PDF (.pdf).
+ * Exports all matching records respecting search, category, group, status, and source filters.
+ */
+export async function exportRegistrations(req, res, next) {
+  try {
+    const prisma = getPrismaClient();
+
+    const format =
+      typeof req.query.format === 'string'
+        ? req.query.format.trim().toLowerCase()
+        : 'xlsx';
+
+    if (!['xlsx', 'csv', 'pdf'].includes(format)) {
+      throw new HttpError(
+        400,
+        'Invalid export format. Expected xlsx, csv, or pdf.'
+      );
+    }
+
+    const competitionId =
+      typeof req.query.competitionId === 'string'
+        ? req.query.competitionId.trim()
+        : '';
+    const categoryId =
+      typeof req.query.categoryId === 'string'
+        ? req.query.categoryId.trim()
+        : '';
+    const groupId =
+      typeof req.query.groupId === 'string' ? req.query.groupId.trim() : '';
+    const search =
+      typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const source =
+      typeof req.query.source === 'string'
+        ? req.query.source.trim().toUpperCase()
+        : 'ALL';
+    const registrationStatus =
+      typeof req.query.registrationStatus === 'string'
+        ? req.query.registrationStatus.trim().toUpperCase()
+        : '';
+    const paymentStatus =
+      typeof req.query.paymentStatus === 'string'
+        ? req.query.paymentStatus.trim().toUpperCase()
+        : '';
+
+    const where = {};
+
+    if (search) {
+      where.OR = [
+        { participantName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { mobileNumber: { contains: search, mode: 'insensitive' } },
+        { registrationCode: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (competitionId) {
+      where.competitionId = competitionId;
+    }
+
+    if (categoryId) {
+      where.categoryId = categoryId;
+    }
+
+    if (groupId) {
+      where.groupId = groupId;
+    }
+
+    if (
+      registrationStatus &&
+      VALID_REGISTRATION_STATUSES.has(registrationStatus)
+    ) {
+      where.registrationStatus = registrationStatus;
+    }
+
+    if (paymentStatus && VALID_PAYMENT_STATUSES.has(paymentStatus)) {
+      where.paymentStatus = paymentStatus;
+    }
+
+    if (source === 'ONLINE') {
+      where.isManual = false;
+    } else if (source === 'MANUAL') {
+      where.isManual = true;
+    }
+
+    const [competition, registrations] = await Promise.all([
+      competitionId
+        ? prisma.competition.findUnique({
+            where: { id: competitionId },
+            select: { id: true, name: true, registrationFee: true },
+          })
+        : null,
+      prisma.registration.findMany({
+        where,
+        include: REGISTRATION_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const compName = competition?.name || 'All_Competitions';
+    const safeCompName = compName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const sourceLabel = source === 'ONLINE' ? 'Online' : source === 'MANUAL' ? 'Manual' : 'All';
+    const filename = `IRONSTAGE_${safeCompName}_Registrations_${sourceLabel}_${dateStr}`;
+
+    const options = {
+      sourceFilter: sourceLabel,
+      generatedAt: new Date(),
+    };
+
+    if (format === 'csv') {
+      const buffer = generateRegistrationsCsv(competition, registrations, options);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}.csv"`
+      );
+      return res.status(200).send(buffer);
+    }
+
+    if (format === 'xlsx') {
+      const buffer = generateRegistrationsExcel(competition, registrations, options);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}.xlsx"`
+      );
+      return res.status(200).send(buffer);
+    }
+
+    if (format === 'pdf') {
+      const buffer = await generateRegistrationsPdf(competition, registrations, options);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}.pdf"`
+      );
+      return res.status(200).send(buffer);
+    }
   } catch (err) {
     next(err);
   }

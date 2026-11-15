@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
-// 30 minutes total inactivity timeout
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
-// Warning appears 2 minutes before logout (at 28 minutes of inactivity)
-const DEFAULT_WARNING_MS = 2 * 60 * 1000;
+// 12 hours (720 minutes) total inactivity timeout
+const DEFAULT_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+// Warning appears 5 minutes before logout (at 11 hours 55 minutes of inactivity)
+const DEFAULT_WARNING_MS = 5 * 60 * 1000;
 
 export function useAdminInactivity({
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -34,7 +34,7 @@ export function useAdminInactivity({
       state: {
         reason: 'SESSION_EXPIRED',
         message:
-          'Your admin session has expired due to 30 minutes of inactivity. Please sign in again.',
+          'Your admin session has expired due to 12 hours of inactivity. Please sign in again.',
       },
     });
   }, [signOut, navigate]);

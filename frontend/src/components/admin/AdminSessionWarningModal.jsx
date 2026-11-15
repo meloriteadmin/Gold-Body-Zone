@@ -36,8 +36,7 @@ export function AdminSessionWarningModal({
               id="inactivity-warning-desc"
               className="mt-1 text-xs leading-relaxed text-zinc-400"
             >
-              You have been inactive for 28 minutes. To protect administrative
-              data, your session will automatically terminate in:
+              You have been inactive. For security, your session will automatically expire in:
             </p>
           </div>
         </div>

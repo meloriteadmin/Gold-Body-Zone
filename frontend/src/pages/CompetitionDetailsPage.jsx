@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Calendar,
-  CheckCircle2,
   Clock,
   CreditCard,
   Loader2,
@@ -22,7 +21,6 @@ import {
   CATEGORY_TYPE_LABELS,
   GENDER_ELIGIBILITY_LABELS,
 } from '../constants/competitionOptions.js';
-import { useParticipantAuth } from '../context/ParticipantAuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import {
   launchCashfreeCheckout,
@@ -31,8 +29,11 @@ import {
 } from '../utils/cashfreeCheckout.js';
 import {
   getCompetitionPoster,
+  getCompetitionStatus,
+  getRegistrationStatus,
   groupCategoriesByGender,
   isDeadlineClosed,
+  isRegistrationPermitted,
 } from '../utils/competitionHelpers.js';
 import { formatDate, formatFee } from '../utils/formatters.js';
 import { verifyReturnedOrder } from '../utils/paymentReturn.js';
@@ -42,14 +43,6 @@ export function CompetitionDetailsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const {
-    accessToken,
-    isAuthenticated,
-    loadingRegistrations,
-    registrationsError,
-    registrationsByCompetitionId,
-    refreshRegistrations,
-  } = useParticipantAuth();
 
   const [competition, setCompetition] = useState(null);
   const [allCompetitions, setAllCompetitions] = useState([]);
@@ -102,13 +95,8 @@ export function CompetitionDetailsPage() {
 
   useEffect(() => {
     loadDetails(false);
-  }, [loadDetails]);
-
-  useEffect(() => {
-    if (accessToken) {
-      refreshRegistrations(accessToken).catch(() => {});
-    }
-  }, [id, accessToken, refreshRegistrations]);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [loadDetails, id]);
 
   const runReturnVerification = useCallback(
     async (orderId) => {
@@ -122,8 +110,6 @@ export function CompetitionDetailsPage() {
           readCheckoutSession,
           saveCheckoutSession,
           verifyOrderPayment: apiClient.verifyOrderPayment,
-          accessToken,
-          refreshRegistrations,
         });
 
         if (!mountedRef.current) return;
@@ -143,7 +129,7 @@ export function CompetitionDetailsPage() {
         }
       }
     },
-    [accessToken, refreshRegistrations]
+    []
   );
 
   // Handle return URL from Cashfree Checkout (?order_id=...) safely without cancelling verification on URL cleanup.
@@ -159,61 +145,18 @@ export function CompetitionDetailsPage() {
     runReturnVerification(orderId);
   }, [searchParams, setSearchParams, runReturnVerification]);
 
-  const syncedRegistration = competition
-    ? registrationsByCompetitionId[competition.id] || null
-    : null;
-  const activeRegistration = useMemo(() => {
-    if (!sessionRegistration) return syncedRegistration;
-    if (!syncedRegistration) return sessionRegistration;
-    if (sessionRegistration.id === syncedRegistration.id) {
-      if (
-        syncedRegistration.paymentStatus === 'PAID' ||
-        syncedRegistration.registrationStatus === 'CONFIRMED'
-      ) {
-        return syncedRegistration;
-      }
-      return { ...sessionRegistration, ...syncedRegistration };
-    }
-    return sessionRegistration;
-  }, [sessionRegistration, syncedRegistration]);
+  const activeRegistration = sessionRegistration;
   const hasActiveRegistration = Boolean(
     activeRegistration && activeRegistration.registrationStatus !== 'CANCELLED'
   );
 
-  // If redirected back from Login/Signup with openRegistration intent, open modal once eligible.
-  useEffect(() => {
-    if (
-      !location.state?.openRegistration ||
-      loading ||
-      loadingRegistrations ||
-      !competition ||
-      !isAuthenticated
-    ) {
-      return;
-    }
-
-    const deadlineClosed = isDeadlineClosed(competition.registrationDeadline);
-    const hasCats = Boolean(competition.categories?.length);
-
-    navigate(location.pathname, { replace: true, state: {} });
-
-    if (!hasActiveRegistration && !deadlineClosed && hasCats) {
-      setModalOpen(true);
-    }
-  }, [
-    location.state,
-    location.pathname,
-    loading,
-    loadingRegistrations,
-    competition,
-    isAuthenticated,
-    hasActiveRegistration,
-    navigate,
-  ]);
-
   const groupedCategories = useMemo(
-    () => groupCategoriesByGender(competition?.categories || []),
-    [competition?.categories]
+    () =>
+      groupCategoriesByGender(
+        competition?.categories || [],
+        competition?.competitionType || ''
+      ),
+    [competition?.categories, competition?.competitionType]
   );
 
   const handleRetryPayment = async () => {
@@ -223,8 +166,7 @@ export function CompetitionDetailsPage() {
     try {
       const res = await apiClient.retryRegistrationPayment(
         activeRegistration.id,
-        { statusToken: checkoutToken || undefined },
-        accessToken
+        { statusToken: checkoutToken || undefined }
       );
 
       setSessionRegistration(res.registration);
@@ -233,9 +175,6 @@ export function CompetitionDetailsPage() {
       }
 
       if (res.alreadyPaid) {
-        if (accessToken) {
-          await refreshRegistrations().catch(() => {});
-        }
         return;
       }
 
@@ -316,6 +255,14 @@ export function CompetitionDetailsPage() {
 
   const deadlinePassed = isDeadlineClosed(competition?.registrationDeadline);
   const noCategories = !competition?.categories?.length;
+  const compStatus = competition ? getCompetitionStatus(competition) : 'Draft';
+  const regStatus = competition ? getRegistrationStatus(competition) : 'Closed';
+  const registrationPermitted = Boolean(
+    competition &&
+      isRegistrationPermitted(competition) &&
+      !noCategories &&
+      !competition.isCompleted
+  );
 
   const isRegisteredAndPaid = Boolean(
     activeRegistration &&
@@ -356,9 +303,21 @@ export function CompetitionDetailsPage() {
   } else if (isCancelledRegistration) {
     availabilityLabel = 'CANCELLED';
     availabilityVariant = 'cancelled';
-  } else if (deadlinePassed) {
-    availabilityLabel = 'Registration Closed';
+  } else if (competition?.isCompleted) {
+    availabilityLabel = 'Competition Completed';
     availabilityVariant = 'cancelled';
+  } else if (compStatus === 'Live') {
+    availabilityLabel = 'Competition Live';
+    availabilityVariant = 'accent';
+  } else if (regStatus === 'Closing Soon') {
+    availabilityLabel = 'Registration Closing Soon';
+    availabilityVariant = 'pending';
+  } else if (regStatus === 'Closed') {
+    availabilityLabel = 'Registrations Closed';
+    availabilityVariant = 'cancelled';
+  } else if (regStatus === 'Open') {
+    availabilityLabel = 'Registrations Open';
+    availabilityVariant = 'confirmed';
   } else if (noCategories) {
     availabilityLabel = 'Categories Pending';
     availabilityVariant = 'cancelled';
@@ -367,22 +326,12 @@ export function CompetitionDetailsPage() {
   const posterSrc = getCompetitionPoster(competition);
 
   const handleCtaClick = () => {
-    if (!isAuthenticated) {
-      navigate('/login', {
-        state: {
-          from: location.pathname,
-          openRegistration: true,
-        },
-      });
-      return;
-    }
-
     if (hasPendingPayment || hasFailedPayment) {
       handleRetryPayment();
       return;
     }
 
-    if (!isRegisteredAndPaid && !deadlinePassed && !noCategories) {
+    if (!isRegisteredAndPaid && registrationPermitted) {
       setModalOpen(true);
     }
   };
@@ -390,26 +339,6 @@ export function CompetitionDetailsPage() {
   return (
     <main className="bg-[#101010] pb-20">
       <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-8">
-        {registrationsError && isAuthenticated && (
-          <div
-            role="alert"
-            className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-200"
-          >
-            <div className="flex items-center gap-2.5">
-              <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
-              <span>{registrationsError}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => refreshRegistrations()}
-              className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 px-3.5 py-1.5 text-[11px] font-bold uppercase hover:bg-amber-500/20"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Retry
-            </button>
-          </div>
-        )}
-
         {verifyingPayment && (
           <div className="mb-6 flex items-center gap-3 rounded-2xl border border-[#F15A24]/35 bg-[#F15A24]/10 p-5 text-sm text-white">
             <Loader2 className="h-5 w-5 animate-spin text-[#F15A24]" />
@@ -440,130 +369,6 @@ export function CompetitionDetailsPage() {
               </button>
             )}
           </div>
-        )}
-
-        {/* Participant Registration / Payment Verification Outcome Panel */}
-        {activeRegistration && (
-          <section
-            className={`mb-8 rounded-2xl border p-6 shadow-xl ${
-              isRegisteredAndPaid
-                ? 'border-emerald-500/35 bg-emerald-500/10'
-                : activeRegistration.paymentStatus === 'FAILED'
-                  ? 'border-red-500/40 bg-red-500/10'
-                  : 'border-[#F15A24]/40 bg-[#F15A24]/10'
-            }`}
-          >
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-              <div className="flex items-start gap-3">
-                {isRegisteredAndPaid ? (
-                  <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-400" />
-                ) : activeRegistration.paymentStatus === 'FAILED' ? (
-                  <AlertCircle className="mt-0.5 h-6 w-6 shrink-0 text-red-400" />
-                ) : (
-                  <Clock className="mt-0.5 h-6 w-6 shrink-0 text-[#F15A24]" />
-                )}
-                <div>
-                  <h2 className="font-display text-3xl font-extrabold tracking-wide text-white uppercase">
-                    {isRegisteredAndPaid
-                      ? 'Payment Successful — Confirmed'
-                      : isCancelledRegistration
-                        ? 'Registration Cancelled'
-                        : activeRegistration.paymentStatus === 'FAILED'
-                          ? 'Payment Failed'
-                          : activeRegistration.paymentStatus === 'PENDING'
-                            ? 'Payment Pending'
-                            : 'Registration Pending'}
-                  </h2>
-                  <p className="mt-1 text-xs text-zinc-200">
-                    {isRegisteredAndPaid
-                      ? 'Your payment has been verified and your entry for this competition is confirmed.'
-                      : isCancelledRegistration
-                        ? 'This registration was cancelled.'
-                        : 'Complete your payment verification to confirm your entry. Retrying will reuse your existing registration record without duplication.'}
-                  </p>
-                </div>
-              </div>
-
-              {!isRegisteredAndPaid &&
-                !isCancelledRegistration &&
-                !deadlinePassed && (
-                <button
-                  type="button"
-                  disabled={retryingPayment}
-                  onClick={handleRetryPayment}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-full bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 py-2.5 text-xs font-bold tracking-wider text-white uppercase shadow-lg shadow-[#F15A24]/25 hover:brightness-110 disabled:opacity-50"
-                >
-                  {retryingPayment ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                  {hasFailedPayment ? 'Retry Payment' : 'Complete / Verify Payment'}
-                </button>
-              )}
-            </div>
-
-            <dl className="mt-5 grid grid-cols-1 gap-3 rounded-xl border border-white/[0.08] bg-[#171717]/80 p-4 text-xs sm:grid-cols-3 lg:grid-cols-6">
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Participant Name</dt>
-                <dd className="mt-1 font-semibold text-white">
-                  {activeRegistration.participantName}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Registration ID</dt>
-                <dd className="mt-1 font-mono font-bold text-[#F15A24]">
-                  {activeRegistration.registrationCode}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Competition</dt>
-                <dd className="mt-1 text-white">
-                  {activeRegistration.competition?.name || competition.name}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Selected Category</dt>
-                <dd className="mt-1 text-white">
-                  {activeRegistration.category
-                    ? `${activeRegistration.category.gender}: ${activeRegistration.category.name}`
-                    : 'Not Set'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Registration Status</dt>
-                <dd className="mt-1">
-                  <StatusBadge
-                    variant={
-                      isRegisteredAndPaid
-                        ? 'confirmed'
-                        : isCancelledRegistration
-                          ? 'cancelled'
-                          : 'pending'
-                    }
-                  >
-                    {activeRegistration.registrationStatus}
-                  </StatusBadge>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[#A1A1AA] uppercase">Payment Status</dt>
-                <dd className="mt-1">
-                  <StatusBadge
-                    variant={
-                      isRegisteredAndPaid
-                        ? 'paid'
-                        : activeRegistration.paymentStatus === 'FAILED'
-                          ? 'failed'
-                          : 'pending'
-                    }
-                  >
-                    {activeRegistration.paymentStatus}
-                  </StatusBadge>
-                </dd>
-              </div>
-            </dl>
-          </section>
         )}
       </div>
 
@@ -607,10 +412,8 @@ export function CompetitionDetailsPage() {
               <button
                 type="button"
                 disabled={
-                  (loadingRegistrations && isAuthenticated) ||
                   isRegisteredAndPaid ||
-                  deadlinePassed ||
-                  noCategories ||
+                  !registrationPermitted ||
                   retryingPayment
                 }
                 onClick={handleCtaClick}
@@ -620,11 +423,6 @@ export function CompetitionDetailsPage() {
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Initiating Payment...</span>
-                  </>
-                ) : loadingRegistrations && isAuthenticated ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Checking Status...</span>
                   </>
                 ) : isRegisteredAndPaid ? (
                   <span>Already Registered</span>
@@ -638,8 +436,12 @@ export function CompetitionDetailsPage() {
                     <span>Retry Payment</span>
                     <ArrowRight className="h-4 w-4" />
                   </>
-                ) : deadlinePassed ? (
-                  <span>Registration Closed</span>
+                ) : competition?.isCompleted ? (
+                  <span>Competition Completed</span>
+                ) : compStatus === 'Live' && !registrationPermitted ? (
+                  <span>Competition Live</span>
+                ) : regStatus === 'Closed' ? (
+                  <span>Registrations Closed</span>
                 ) : noCategories ? (
                   <span>Categories Pending</span>
                 ) : (
@@ -649,6 +451,16 @@ export function CompetitionDetailsPage() {
                   </>
                 )}
               </button>
+
+              {regStatus === 'Closing Soon' && !isRegisteredAndPaid && (
+                <div className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300">
+                  <Clock className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>
+                    Registration Closing Soon — Closes on{' '}
+                    {formatDate(competition.registrationDeadline)}
+                  </span>
+                </div>
+              )}
 
               {deadlinePassed && !isRegisteredAndPaid && (
                 <p className="inline-flex items-center gap-2 text-xs text-red-300">
@@ -781,32 +593,46 @@ export function CompetitionDetailsPage() {
                     {group.label}
                   </h3>
                   <div className="mt-4 space-y-2.5">
-                    {group.items.map((cat) => (
-                      <div
-                        key={cat.id}
-                        className="rounded-xl border border-white/[0.06] bg-[#171717] p-3.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-white">
-                            {cat.name}
-                          </span>
-                          <span
-                            className={`rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
-                              CATEGORY_GENDER_STYLES[cat.gender] ||
-                              CATEGORY_GENDER_STYLES.OPEN
-                            }`}
-                          >
-                            {CATEGORY_TYPE_LABELS[cat.categoryType] ||
-                              cat.categoryType}
-                          </span>
+                    {group.items.map((cat) => {
+                      const isCleanOpen =
+                        cat.categoryType === 'OPEN' &&
+                        cat.name?.toLowerCase().includes('open');
+                      const displayName =
+                        cat.name?.toLowerCase() === 'open category'
+                          ? competition.competitionType === 'Masters'
+                            ? 'Masters Open'
+                            : 'Open Category'
+                          : cat.name;
+
+                      return (
+                        <div
+                          key={cat.id}
+                          className="rounded-xl border border-white/[0.06] bg-[#171717] p-3.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-white">
+                              {displayName}
+                            </span>
+                            {!isCleanOpen && (
+                              <span
+                                className={`rounded-md border px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+                                  CATEGORY_GENDER_STYLES[cat.gender] ||
+                                  CATEGORY_GENDER_STYLES.OPEN
+                                }`}
+                              >
+                                {CATEGORY_TYPE_LABELS[cat.categoryType] ||
+                                  cat.categoryType}
+                              </span>
+                            )}
+                          </div>
+                          {cat.ruleNote && (
+                            <p className="mt-1.5 text-xs text-[#A1A1AA]">
+                              {cat.ruleNote}
+                            </p>
+                          )}
                         </div>
-                        {cat.ruleNote && (
-                          <p className="mt-1.5 text-xs text-[#A1A1AA]">
-                            {cat.ruleNote}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}

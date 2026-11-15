@@ -175,9 +175,9 @@ describe('Admin Security, Rate Limiting & Inactivity Logic', () => {
     );
   });
 
-  it('evaluates admin session inactivity timer logic (30m expiry, 28m warning)', () => {
-    const TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-    const WARNING_MS = 2 * 60 * 1000;  // 2 minutes before expiry (at 28 min)
+  it('evaluates admin session inactivity timer logic (12h expiry, 5m warning)', () => {
+    const TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours (720 minutes)
+    const WARNING_MS = 5 * 60 * 1000;       // 5 minutes before expiry (at 11h 55m)
 
     function evaluateInactivity(lastActivityTime, currentTime) {
       const elapsed = currentTime - lastActivityTime;
@@ -198,31 +198,31 @@ describe('Admin Security, Rate Limiting & Inactivity Logic', () => {
 
     const t0 = 10000000;
 
-    // Active within 10 minutes -> ACTIVE
-    const at10m = evaluateInactivity(t0, t0 + 10 * 60 * 1000);
-    assert.equal(at10m.status, 'ACTIVE');
-    assert.equal(at10m.shouldLogout, false);
-    assert.equal(at10m.isWarning, false);
+    // Active within 6 hours -> ACTIVE
+    const at6h = evaluateInactivity(t0, t0 + 6 * 60 * 60 * 1000);
+    assert.equal(at6h.status, 'ACTIVE');
+    assert.equal(at6h.shouldLogout, false);
+    assert.equal(at6h.isWarning, false);
 
-    // Inactive for 28 minutes 30 seconds -> WARNING with 90s remaining
-    const at28m30s = evaluateInactivity(t0, t0 + 28.5 * 60 * 1000);
-    assert.equal(at28m30s.status, 'WARNING');
-    assert.equal(at28m30s.isWarning, true);
-    assert.equal(at28m30s.secondsRemaining, 90);
+    // Inactive for 11 hours 56 minutes -> WARNING with 240s (4 min) remaining
+    const at11h56m = evaluateInactivity(t0, t0 + (11 * 60 + 56) * 60 * 1000);
+    assert.equal(at11h56m.status, 'WARNING');
+    assert.equal(at11h56m.isWarning, true);
+    assert.equal(at11h56m.secondsRemaining, 240);
 
-    // Inactive for 30 minutes -> EXPIRED and shouldLogout = true
-    const at30m = evaluateInactivity(t0, t0 + 30 * 60 * 1000);
-    assert.equal(at30m.status, 'EXPIRED');
-    assert.equal(at30m.shouldLogout, true);
+    // Inactive for 12 hours -> EXPIRED and shouldLogout = true
+    const at12h = evaluateInactivity(t0, t0 + 12 * 60 * 60 * 1000);
+    assert.equal(at12h.status, 'EXPIRED');
+    assert.equal(at12h.shouldLogout, true);
 
-    // Returning after 35 minutes (e.g. computer sleep or background tab):
-    // elapsed exceeds 30m, should immediately expire and logout
-    const at35m = evaluateInactivity(t0, t0 + 35 * 60 * 1000);
-    assert.equal(at35m.status, 'EXPIRED');
-    assert.equal(at35m.shouldLogout, true);
+    // Returning after 13 hours (e.g. computer sleep or background tab):
+    // elapsed exceeds 12h, should immediately expire and logout
+    const at13h = evaluateInactivity(t0, t0 + 13 * 60 * 60 * 1000);
+    assert.equal(at13h.status, 'EXPIRED');
+    assert.equal(at13h.shouldLogout, true);
 
-    // Admin chooses to extend session while still in warning window (29m) -> lastActivity resets to now, status back to ACTIVE
-    const tExtended = t0 + 29 * 60 * 1000;
+    // Admin chooses to extend session while still in warning window (11h 57m) -> lastActivity resets to now, status back to ACTIVE
+    const tExtended = t0 + (11 * 60 + 57) * 60 * 1000;
     const afterExtend = evaluateInactivity(tExtended, tExtended + 1000);
     assert.equal(afterExtend.status, 'ACTIVE');
     assert.equal(afterExtend.shouldLogout, false);

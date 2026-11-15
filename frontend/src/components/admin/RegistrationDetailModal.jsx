@@ -256,7 +256,27 @@ export function RegistrationDetailModal({
                     : 'Not Available'}
                 </dd>
               </div>
-              <div className="sm:col-span-2 lg:col-span-3">
+              <div>
+                <dt className="font-semibold text-[#A1A1AA] uppercase">
+                  Group / Division
+                </dt>
+                <dd className="mt-1 text-white">
+                  {registration.group?.name ||
+                    registration.groupName ||
+                    'None / Open'}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-[#A1A1AA] uppercase">
+                  Registration Source
+                </dt>
+                <dd className="mt-1 font-semibold text-white">
+                  {registration.isManual
+                    ? 'Admin Manual Registration'
+                    : 'Online Registration'}
+                </dd>
+              </div>
+              <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
                   Registration Date
                 </dt>
@@ -286,20 +306,38 @@ export function RegistrationDetailModal({
             <dl className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2">
               <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
-                  Cashfree Order ID
+                  Payment Method
                 </dt>
-                <dd className="mt-1 font-mono text-white">
-                  {payment?.cashfreeOrderId || 'Not Available'}
+                <dd className="mt-1 font-semibold text-white">
+                  {registration.paymentMethod ||
+                    (registration.isManual
+                      ? 'Offline'
+                      : payment?.cashfreeOrderId
+                        ? 'Cashfree Gateway (Online)'
+                        : 'Not Available')}
                 </dd>
               </div>
               <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
-                  Cashfree Payment ID
+                  Cashfree Order ID
                 </dt>
                 <dd className="mt-1 font-mono text-white">
-                  {payment?.cashfreePaymentId || 'Not Available'}
+                  {payment?.cashfreeOrderId ||
+                    (registration.isManual
+                      ? 'Offline Transaction (No gateway required)'
+                      : 'Not Available')}
                 </dd>
               </div>
+              {payment?.cashfreePaymentId && (
+                <div>
+                  <dt className="font-semibold text-[#A1A1AA] uppercase">
+                    Cashfree Payment ID
+                  </dt>
+                  <dd className="mt-1 font-mono text-white">
+                    {payment.cashfreePaymentId}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
                   Transaction Amount

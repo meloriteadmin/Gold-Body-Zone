@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import QRCode from 'qrcode';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/httpError.js';
 
@@ -223,5 +224,50 @@ export async function fetchCashfreeOrderState(orderId) {
           ? Number(orderData.order_amount)
           : null,
     paymentTime: latestAttempt?.payment_time || null,
+  };
+}
+
+export async function createCashfreeUpiQr({ paymentSessionId }) {
+  const data = await cashfreeRequest('/orders/sessions', {
+    method: 'POST',
+    body: {
+      payment_session_id: paymentSessionId,
+      payment_method: {
+        upi: {
+          channel: 'qrcode',
+        },
+      },
+    },
+  });
+
+  let qrDataUrl = null;
+  const rawQrcode =
+    data.data?.payload?.qrcode ||
+    data.data?.payload ||
+    data.data?.url ||
+    null;
+
+  if (typeof rawQrcode === 'string' && rawQrcode.startsWith('data:image/')) {
+    qrDataUrl = rawQrcode;
+  } else if (typeof rawQrcode === 'string' && (rawQrcode.startsWith('upi://') || rawQrcode.startsWith('http'))) {
+    qrDataUrl = await QRCode.toDataURL(rawQrcode, {
+      margin: 2,
+      width: 320,
+      color: { dark: '#000000', light: '#FFFFFF' },
+    });
+  } else if (typeof data.data?.payload === 'string') {
+    qrDataUrl = await QRCode.toDataURL(data.data.payload, {
+      margin: 2,
+      width: 320,
+      color: { dark: '#000000', light: '#FFFFFF' },
+    });
+  }
+
+  return {
+    action: data.action || 'custom',
+    channel: data.channel || 'qrcode',
+    cfPaymentId: data.cf_payment_id ? String(data.cf_payment_id) : null,
+    qrDataUrl,
+    rawPayload: data.data?.payload || null,
   };
 }

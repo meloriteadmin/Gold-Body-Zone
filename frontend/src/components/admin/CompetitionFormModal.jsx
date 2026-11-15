@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ImageOff,
   ImagePlus,
@@ -15,6 +15,7 @@ import {
   FIXED_COMPETITION_TYPES,
   GENDER_ELIGIBILITY_OPTIONS,
 } from '../../constants/competitionOptions.js';
+import { CategoryEditor } from './CategoryEditor.jsx';
 import { NEUTRAL_COMPETITION_POSTER } from '../../utils/competitionHelpers.js';
 import { toDateInputValue } from '../../utils/formatters.js';
 
@@ -99,6 +100,16 @@ export function CompetitionFormModal({
       }
     };
   }, [posterPreviewUrl]);
+
+  const availableGenderOptions = useMemo(() => {
+    if (['Bodybuilding', "Men's Physique", 'Masters'].includes(competitionType)) {
+      return [{ value: 'MALE_ONLY', label: 'Male Only' }];
+    }
+    if (competitionType === "Women's Competition") {
+      return [{ value: 'FEMALE_ONLY', label: 'Female Only' }];
+    }
+    return GENDER_ELIGIBILITY_OPTIONS;
+  }, [competitionType]);
 
   if (!isOpen) return null;
 
@@ -203,6 +214,11 @@ export function CompetitionFormModal({
           name: cat.name,
           ruleNote: cat.ruleNote || null,
           sortOrder: index + 1,
+          groups: (cat.groups || []).map((grp, gIndex) => ({
+            ...(grp.id ? { id: grp.id } : {}),
+            name: grp.name,
+            sortOrder: gIndex + 1,
+          })),
         })),
       };
 
@@ -293,87 +309,6 @@ export function CompetitionFormModal({
               </div>
             </div>
 
-            {/* Dynamic Competition Configuration Display */}
-            {competitionType && (
-              <div className="rounded-xl border border-white/10 bg-[#171717] p-4.5 space-y-3">
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-[#F15A24]" />
-                    <span className="text-xs font-bold tracking-wider text-white uppercase">
-                      {competitionType} Division Configuration
-                    </span>
-                  </div>
-                  <span className="rounded-full border border-[#F15A24]/30 bg-[#F15A24]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#F15A24] uppercase">
-                    Auto-Configured
-                  </span>
-                </div>
-
-                {competitionType === 'Bodybuilding' && (
-                  <div className="space-y-2.5 text-xs">
-                    <div>
-                      <span className="font-semibold text-zinc-300">
-                        Male Weight Categories:
-                      </span>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {['55–65 kg', '65–75 kg', '75–85 kg', '85–100 kg'].map(
-                          (cat) => (
-                            <span
-                              key={cat}
-                              className="rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1 text-xs font-medium text-white"
-                            >
-                              {cat}
-                            </span>
-                          )
-                        )}
-                      </div>
-                    </div>
-                    <div className="pt-0.5">
-                      <span className="font-semibold text-zinc-300">
-                        Female Category:
-                      </span>
-                      <div className="mt-1.5">
-                        <span className="rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1 text-xs font-medium text-white">
-                          Open Category
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {competitionType === "Men's Physique" && (
-                  <div className="space-y-2 text-xs">
-                    <div>
-                      <span className="font-semibold text-zinc-300">
-                        Configured Height Categories:
-                      </span>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {['Under 175 cm', 'Above 175 cm'].map((cat) => (
-                          <span
-                            key={cat}
-                            className="rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1 text-xs font-medium text-white"
-                          >
-                            {cat}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {competitionType === 'Masters' && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <ShieldAlert className="h-4 w-4 text-amber-400 shrink-0" />
-                      Strict Masters Eligibility: Above 40 years of age only
-                    </div>
-                    <p className="mt-1 text-[11px] text-zinc-300">
-                      No weight or height divisions. All eligible Masters athletes compete in the Open Masters division.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Description */}
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-zinc-300">
@@ -452,9 +387,10 @@ export function CompetitionFormModal({
                 <select
                   value={genderEligibility}
                   onChange={(e) => setGenderEligibility(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2.5 text-sm text-white focus:border-[#F15A24] focus:outline-none"
+                  disabled={availableGenderOptions.length === 1}
+                  className="w-full rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2.5 text-sm text-white focus:border-[#F15A24] focus:outline-none disabled:opacity-85"
                 >
-                  {GENDER_ELIGIBILITY_OPTIONS.map((opt) => (
+                  {availableGenderOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -471,12 +407,19 @@ export function CompetitionFormModal({
                   value={ageEligibility}
                   onChange={(e) => setAgeEligibility(e.target.value)}
                   placeholder="e.g. Above 40 years of age"
-                  readOnly={competitionType === 'Masters'}
-                  className={`w-full rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none ${
-                    competitionType === 'Masters' ? 'opacity-80 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
                 />
               </div>
+            </div>
+
+            {/* Categories & Groups Management */}
+            <div>
+              <CategoryEditor
+                categories={categories}
+                onChange={setCategories}
+                competitionType={competitionType}
+                genderEligibility={genderEligibility}
+              />
             </div>
 
             {/* Poster Upload & Management */}

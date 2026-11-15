@@ -85,6 +85,10 @@ model Competition {
   ageEligibility       String?               @map("age_eligibility")
   isPublished          Boolean               @default(false) @map("is_published")
   publishedAt          DateTime?             @map("published_at")
+  isCompleted          Boolean               @default(false) @map("is_completed")
+  completedAt          DateTime?             @map("completed_at")
+  isRegistrationClosed Boolean               @default(false) @map("is_registration_closed")
+  registrationClosedAt DateTime?             @map("registration_closed_at")
   isDefault            Boolean               @default(false) @map("is_default")
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
@@ -96,20 +100,35 @@ model Competition {
 }
 
 model CompetitionCategory {
-  id            String         @id @default(uuid())
-  competitionId String         @map("competition_id")
-  categoryType  CategoryType   @default(OPEN) @map("category_type")
-  gender        CategoryGender @default(OPEN)
+  id            String          @id @default(uuid())
+  competitionId String          @map("competition_id")
+  categoryType  CategoryType    @default(OPEN) @map("category_type")
+  gender        CategoryGender  @default(OPEN)
   name          String
-  ruleNote      String?        @map("rule_note")
-  sortOrder     Int            @default(0) @map("sort_order")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  competition   Competition    @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  ruleNote      String?         @map("rule_note")
+  sortOrder     Int             @default(0) @map("sort_order")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  competition   Competition     @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  groups        CategoryGroup[]
   registrations Registration[]
 
   @@index([competitionId, sortOrder])
   @@map("competition_categories")
+}
+
+model CategoryGroup {
+  id            String              @id @default(uuid())
+  categoryId    String              @map("category_id")
+  name          String
+  sortOrder     Int                 @default(0) @map("sort_order")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  category      CompetitionCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+
+  @@index([categoryId, sortOrder])
+  @@map("category_groups")
 }
 
 model Registration {
@@ -117,33 +136,39 @@ model Registration {
   registrationCode   String              @unique @map("registration_code")
   competitionId      String              @map("competition_id")
   categoryId         String              @map("category_id")
+  groupId            String?             @map("group_id")
+  groupName          String?             @map("group_name")
   participantName    String              @map("participant_name")
   email              String
   mobileNumber       String              @map("mobile_number")
   gender             ParticipantGender
   age                Int
-  heightCm           Decimal             @db.Decimal(5, 2) @map("height_cm")
-  weightKg           Decimal             @db.Decimal(5, 2) @map("weight_kg")
-  district                String
-  representingType        RepresentingType    @default(GYM) @map("representing_type")
-  gymName                 String              @map("gym_name")
-  aadhaarEncrypted        String?             @map("aadhaar_encrypted")
-  aadhaarHash             String?             @map("aadhaar_hash")
-  aadhaarLast4            String?             @map("aadhaar_last4")
-  aadhaarConsentAt        DateTime?           @map("aadhaar_consent_at")
-  registrationStatus      RegistrationStatus  @default(PENDING) @map("registration_status")
-  paymentStatus           PaymentStatus       @default(PENDING) @map("payment_status")
-  acknowledgementEmailSentAt DateTime?        @map("acknowledgement_email_sent_at")
-  confirmationEmailSentAt DateTime?           @map("confirmation_email_sent_at")
-  createdAt               DateTime            @default(now()) @map("created_at")
+  heightCm           Decimal?            @db.Decimal(5, 2) @map("height_cm")
+  weightKg           Decimal?            @db.Decimal(5, 2) @map("weight_kg")
+  district           String
+  representingType   RepresentingType    @default(GYM) @map("representing_type")
+  gymName            String              @map("gym_name")
+  aadhaarEncrypted   String?             @map("aadhaar_encrypted")
+  aadhaarHash        String?             @map("aadhaar_hash")
+  aadhaarLast4       String?             @map("aadhaar_last4")
+  aadhaarConsentAt   DateTime?           @map("aadhaar_consent_at")
+  registrationStatus RegistrationStatus  @default(PENDING) @map("registration_status")
+  paymentStatus      PaymentStatus       @default(PENDING) @map("payment_status")
+  isManual           Boolean             @default(false) @map("is_manual")
+  paymentMethod      String?             @map("payment_method")
+  acknowledgementEmailSentAt DateTime?   @map("acknowledgement_email_sent_at")
+  confirmationEmailSentAt    DateTime?   @map("confirmation_email_sent_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   competition        Competition         @relation(fields: [competitionId], references: [id], onDelete: Restrict)
   category           CompetitionCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  group              CategoryGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
   payment            Payment?
 
   @@unique([competitionId, email])
   @@index([competitionId, createdAt])
   @@index([categoryId])
+  @@index([groupId])
   @@index([registrationStatus])
   @@index([paymentStatus])
   @@map("registrations")

@@ -1,0 +1,1064 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  Banknote,
+  Check,
+  CheckCircle2,
+  Clock,
+  Coins,
+  Loader2,
+  Plus,
+  QrCode,
+  RefreshCw,
+  ShieldAlert,
+  UserPlus,
+  X,
+} from 'lucide-react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { apiClient } from '../../lib/apiClient.js';
+import { checkAgeEligibility } from '../../utils/competitionHelpers.js';
+import { formatFee } from '../../utils/formatters.js';
+
+const MAHARASHTRA_DISTRICTS = [
+  'Ahmednagar',
+  'Akola',
+  'Amravati',
+  'Aurangabad (Chhatrapati Sambhaji Nagar)',
+  'Beed',
+  'Bhandara',
+  'Buldhana',
+  'Chandrapur',
+  'Dhule',
+  'Gadchiroli',
+  'Gondia',
+  'Hingoli',
+  'Jalgaon',
+  'Jalna',
+  'Kolhapur',
+  'Latur',
+  'Mumbai City',
+  'Mumbai Suburban',
+  'Nagpur',
+  'Nanded',
+  'Nandurbar',
+  'Nashik',
+  'Osmanabad (Dharashiv)',
+  'Palghar',
+  'Parbhani',
+  'Pune',
+  'Raigad',
+  'Ratnagiri',
+  'Sangli',
+  'Satara',
+  'Sindhudurg',
+  'Solapur',
+  'Thane',
+  'Wardha',
+  'Washim',
+  'Yavatmal',
+  'Other / Outside Maharashtra',
+];
+
+const PAYMENT_METHODS = [
+  {
+    id: 'CASH',
+    label: 'Cash',
+    sublabel: 'Instant Confirmed & Paid',
+    icon: Banknote,
+    accent: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
+  },
+  {
+    id: 'UPI',
+    label: 'UPI (Cashfree Dynamic QR)',
+    sublabel: 'Instant Scan & Pay Verification',
+    icon: Coins,
+    accent: 'border-blue-500/40 bg-blue-500/10 text-blue-400',
+  },
+];
+
+export function ManualRegistrationModal({
+  isOpen,
+  competitions = [],
+  selectedCompetitionId = '',
+  onClose,
+  onSuccess,
+}) {
+  const { accessToken } = useAuth();
+
+  const [competitionId, setCompetitionId] = useState('');
+  const [participantName, setParticipantName] = useState('');
+  const [email, setEmail] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [gender, setGender] = useState('MALE');
+  const [age, setAge] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [heightCm, setHeightCm] = useState('');
+  const [weightKg, setWeightKg] = useState('');
+  const [district, setDistrict] = useState('Nashik');
+  const [representingType, setRepresentingType] = useState('GYM');
+  const [gymName, setGymName] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // Dynamic Cashfree UPI QR state
+  const [qrModalData, setQrModalData] = useState(null);
+  const [qrVerified, setQrVerified] = useState(false);
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [qrStatusText, setQrStatusText] = useState('');
+
+  // Determine active competition
+  const activeCompetition = useMemo(() => {
+    return (
+      competitions.find((c) => c.id === competitionId) ||
+      competitions[0] ||
+      null
+    );
+  }, [competitions, competitionId]);
+
+  // Sync competitionId on open
+  useEffect(() => {
+    if (isOpen) {
+      if (selectedCompetitionId) {
+        setCompetitionId(selectedCompetitionId);
+      } else if (competitions.length > 0 && !competitionId) {
+        setCompetitionId(competitions[0].id);
+      }
+      setParticipantName('');
+      setEmail('');
+      setMobileNumber('');
+      setAge('');
+      setHeightCm('');
+      setWeightKg('');
+      setDistrict('Nashik');
+      setRepresentingType('GYM');
+      setGymName('');
+      setPaymentMethod('CASH');
+      setFormError('');
+      setFieldErrors({});
+      setQrModalData(null);
+      setQrVerified(false);
+      setCheckingPayment(false);
+      setQrStatusText('');
+    }
+  }, [isOpen, selectedCompetitionId, competitions]);
+
+  const isWomensCompetition = useMemo(() => {
+    return (
+      activeCompetition?.competitionType === "Women's Competition" ||
+      activeCompetition?.genderEligibility === 'FEMALE_ONLY'
+    );
+  }, [activeCompetition]);
+
+  const allowedGenders = useMemo(() => {
+    if (!activeCompetition) return ['MALE', 'FEMALE', 'OTHER'];
+    if (
+      activeCompetition.genderEligibility === 'MALE_ONLY' ||
+      ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+        activeCompetition.competitionType
+      )
+    ) {
+      return ['MALE'];
+    }
+    if (isWomensCompetition) {
+      return ['FEMALE'];
+    }
+    return ['MALE', 'FEMALE', 'OTHER'];
+  }, [activeCompetition, isWomensCompetition]);
+
+  // Adjust default gender when competition changes
+  useEffect(() => {
+    if (allowedGenders.length === 1) {
+      setGender(allowedGenders[0]);
+    } else if (!allowedGenders.includes(gender)) {
+      setGender(allowedGenders[0] || 'MALE');
+    }
+  }, [allowedGenders, gender]);
+
+  // Filter categories by gender and competition restrictions
+  const compatibleCategories = useMemo(() => {
+    if (!activeCompetition?.categories) return [];
+    return activeCompetition.categories.filter((cat) => {
+      if (
+        ['Bodybuilding', "Men's Physique", 'Masters'].includes(
+          activeCompetition.competitionType
+        )
+      ) {
+        if (cat.gender === 'FEMALE' || /female/i.test(cat.name || '')) {
+          return false;
+        }
+        if (
+          activeCompetition.competitionType === 'Bodybuilding' &&
+          (/open/i.test(cat.name || '') || cat.categoryType === 'OPEN')
+        ) {
+          return false;
+        }
+        return cat.gender === 'MALE' || cat.gender === 'OPEN';
+      }
+
+      if (activeCompetition.competitionType === "Women's Competition") {
+        if (cat.gender === 'MALE' || /male/i.test(cat.name || '')) {
+          return false;
+        }
+        return cat.gender === 'FEMALE' || cat.gender === 'OPEN';
+      }
+
+      if (cat.gender === 'OPEN') return true;
+      return cat.gender === gender;
+    });
+  }, [activeCompetition, gender]);
+
+  // Sync categoryId if currently selected is invalid
+  useEffect(() => {
+    if (compatibleCategories.length === 1) {
+      setCategoryId(compatibleCategories[0].id);
+    } else if (
+      categoryId &&
+      !compatibleCategories.some((c) => c.id === categoryId)
+    ) {
+      setCategoryId(compatibleCategories[0]?.id || '');
+    } else if (!categoryId && compatibleCategories.length > 0) {
+      setCategoryId(compatibleCategories[0].id);
+    }
+  }, [compatibleCategories, categoryId]);
+
+  const selectedCategory = useMemo(() => {
+    return compatibleCategories.find((c) => c.id === categoryId) || null;
+  }, [compatibleCategories, categoryId]);
+
+  const availableGroups = useMemo(() => {
+    return selectedCategory?.groups || [];
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    if (availableGroups.length > 0 && !groupId) {
+      setGroupId(availableGroups[0].id);
+    } else if (
+      groupId &&
+      !availableGroups.some((g) => g.id === groupId)
+    ) {
+      setGroupId(availableGroups[0]?.id || '');
+    }
+  }, [availableGroups, groupId]);
+
+  const ageCheck = useMemo(
+    () =>
+      checkAgeEligibility(
+        activeCompetition?.ageEligibility,
+        age,
+        activeCompetition?.competitionType
+      ),
+    [activeCompetition?.ageEligibility, activeCompetition?.competitionType, age]
+  );
+
+  const clearFieldError = (fieldName) => {
+    setFieldErrors((prev) => {
+      if (!prev[fieldName]) return prev;
+      const next = { ...prev };
+      delete next[fieldName];
+      return next;
+    });
+    setFormError('');
+  };
+
+  const validateForm = () => {
+    const errs = {};
+    if (!activeCompetition?.id) errs.competitionId = 'Competition is required.';
+    if (!participantName.trim() || participantName.trim().length < 2) {
+      errs.participantName = 'Full Name must be at least 2 characters.';
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim() || !emailRegex.test(email.trim())) {
+      errs.email = 'Please enter a valid email address.';
+    }
+    const rawDigits = mobileNumber.replace(/\D/g, '');
+    if (rawDigits.length !== 10) {
+      errs.mobileNumber = 'Mobile number must be exactly 10 digits.';
+    }
+    const numericAge = Number.parseInt(age, 10);
+    if (!age || Number.isNaN(numericAge) || numericAge < 10 || numericAge > 99) {
+      errs.age = 'Age must be between 10 and 99.';
+    } else if (ageCheck && !ageCheck.eligible) {
+      errs.age = ageCheck.message;
+    }
+
+    if (!categoryId) {
+      errs.categoryId = 'Please select a category.';
+    }
+
+    if (!isWomensCompetition) {
+      const h = Number.parseFloat(heightCm);
+      if (!heightCm || Number.isNaN(h) || h < 80 || h > 260) {
+        errs.heightCm = 'Height must be between 80 and 260 cm.';
+      }
+      const w = Number.parseFloat(weightKg);
+      if (!weightKg || Number.isNaN(w) || w < 25 || w > 300) {
+        errs.weightKg = 'Weight must be between 25 and 300 kg.';
+      }
+    }
+
+    if (!district) errs.district = 'Please select a district.';
+    if (representingType === 'GYM' && (!gymName.trim() || gymName.trim().length < 2)) {
+      errs.gymName = 'Gym name must be at least 2 characters.';
+    }
+
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+
+    if (!validateForm()) {
+      setFormError('Please resolve the errors highlighted below.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        competitionId: activeCompetition.id,
+        categoryId,
+        groupId: groupId || undefined,
+        participantName: participantName.trim(),
+        email: email.trim().toLowerCase(),
+        mobileNumber: mobileNumber.replace(/\D/g, ''),
+        gender,
+        age: Number.parseInt(age, 10),
+        heightCm: heightCm ? Number.parseFloat(heightCm) : undefined,
+        weightKg: weightKg ? Number.parseFloat(weightKg) : undefined,
+        district,
+        representingType,
+        gymName:
+          representingType === 'GYM'
+            ? gymName.trim()
+            : 'Other / Individual',
+        paymentMethod,
+      };
+
+      const res = await apiClient.createManualRegistration(accessToken, payload);
+      if (res.upiQr) {
+        setQrModalData({
+          registration: res.registration,
+          upiQr: res.upiQr,
+        });
+        setQrVerified(false);
+        setQrStatusText('Waiting for UPI payment...');
+      } else {
+        if (onSuccess) {
+          onSuccess({
+            ...res.registration,
+            competitionName: activeCompetition?.name,
+          });
+        }
+        onClose();
+      }
+    } catch (err) {
+      setFormError(err.message || 'Failed to create manual registration.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const checkUpiStatus = async (showLoading = true) => {
+    if (!qrModalData?.registration?.id || !accessToken) return;
+    if (showLoading) setCheckingPayment(true);
+    try {
+      const result = await apiClient.verifyRegistrationPayment(
+        accessToken,
+        qrModalData.registration.id
+      );
+      if (result.isPaid) {
+        setQrVerified(true);
+        setQrStatusText('Payment verified successfully! Registration is CONFIRMED (PAID).');
+        if (onSuccess) {
+          onSuccess({
+            ...result.registration,
+            competitionName: activeCompetition?.name,
+          });
+        }
+        onClose();
+      } else {
+        setQrStatusText('Payment still pending. Waiting for participant to complete payment...');
+      }
+    } catch (err) {
+      console.warn('Payment check failed:', err);
+    } finally {
+      if (showLoading) setCheckingPayment(false);
+    }
+  };
+
+  // Poll payment status every 3 seconds while in QR view and not yet verified
+  useEffect(() => {
+    if (!qrModalData || qrVerified || !isOpen) return;
+    const interval = setInterval(() => {
+      checkUpiStatus(false);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [qrModalData, qrVerified, isOpen, accessToken]);
+
+  if (!isOpen) return null;
+
+  if (qrModalData) {
+    const { registration, upiQr } = qrModalData;
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="upi-qr-modal-title"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        />
+
+        <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col rounded-3xl border border-white/10 bg-[#171717] shadow-2xl overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
+                <QrCode className="h-5 w-5" />
+              </div>
+              <div>
+                <h2
+                  id="upi-qr-modal-title"
+                  className="font-display text-lg font-bold tracking-wide text-white uppercase"
+                >
+                  Cashfree Dynamic UPI QR
+                </h2>
+                <p className="text-xs text-zinc-400">
+                  Scan and complete payment using any UPI app
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-white/10 p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-5 text-center">
+            {/* Participant & Competition Details Pill */}
+            <div className="rounded-2xl border border-white/[0.06] bg-[#222222] p-4 text-left space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Participant:</span>
+                <span className="font-semibold text-white">
+                  {registration.participantName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Registration ID:</span>
+                <span className="font-mono font-bold text-[#F15A24]">
+                  {registration.registrationCode}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Competition:</span>
+                <span className="text-zinc-200">
+                  {activeCompetition?.name || 'Competition'}
+                </span>
+              </div>
+              {registration.category && (
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Category:</span>
+                  <span className="text-zinc-200">
+                    {registration.category.gender}: {registration.category.name}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Fee Amount Banner */}
+            <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3.5">
+              <p className="text-[11px] font-bold tracking-wider text-blue-400 uppercase">
+                Exact Registration Fee
+              </p>
+              <p className="font-display text-3xl font-extrabold text-white mt-1">
+                {formatFee(upiQr.amount)}
+              </p>
+            </div>
+
+            {/* QR Code Presentation Box */}
+            <div className="mx-auto flex w-60 h-60 items-center justify-center rounded-2xl bg-white p-3 shadow-2xl ring-2 ring-white/20">
+              {upiQr.qrDataUrl ? (
+                <img
+                  src={upiQr.qrDataUrl}
+                  alt="Cashfree UPI Dynamic QR Code"
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-zinc-500 text-xs">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#F15A24] mb-2" />
+                  <span>Loading QR...</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-zinc-400">
+              Scan with{' '}
+              <span className="font-semibold text-zinc-200">
+                Google Pay, PhonePe, Paytm, BHIM
+              </span>
+              , or any banking UPI app.
+            </p>
+
+            {/* Verification Status Banner */}
+            {qrVerified ? (
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-left">
+                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-400 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-bold text-emerald-400 uppercase tracking-wide">
+                    Payment Verified Successfully!
+                  </p>
+                  <p className="text-emerald-200/90 mt-0.5">
+                    Registration is now CONFIRMED (PAID). A confirmation email
+                    has been sent to {registration.email}.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#222222] px-4 py-3 text-xs">
+                <div className="flex items-center gap-2 text-zinc-300">
+                  <Clock className="h-4 w-4 animate-pulse text-amber-400" />
+                  <span>{qrStatusText || 'Waiting for UPI payment...'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => checkUpiStatus(true)}
+                  disabled={checkingPayment}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/10 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${checkingPayment ? 'animate-spin' : ''}`}
+                  />
+                  Check Status
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Footer Controls */}
+          <div className="border-t border-white/[0.08] px-6 py-4 flex items-center justify-end gap-3 bg-[#141414]">
+            {qrVerified ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSuccess) onSuccess(registration);
+                  onClose();
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-emerald-500/20 hover:brightness-110"
+              >
+                <Check className="h-4 w-4" />
+                Done & View Registrations
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-zinc-400 hover:bg-white/5 hover:text-white"
+                >
+                  Cancel & Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => checkUpiStatus(true)}
+                  disabled={checkingPayment}
+                  className="flex items-center gap-2 rounded-xl bg-[#F15A24] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#E04F1D] disabled:opacity-60"
+                >
+                  {checkingPayment ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Verify Payment
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="manual-reg-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+      />
+
+      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-3xl border border-white/10 bg-[#171717] shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F15A24]/15 text-[#F15A24]">
+              <UserPlus className="h-5 w-5" />
+            </div>
+            <div>
+              <h2
+                id="manual-reg-modal-title"
+                className="font-display text-xl font-bold tracking-wide text-white uppercase"
+              >
+                Manual Participant Registration
+              </h2>
+              <p className="text-xs text-[#A1A1AA]">
+                Admin offline entry with Cash or UPI payment tracking.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-white/10 p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          {formError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-200"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          {/* Section 1: Competition Selection */}
+          <div className="space-y-3 rounded-2xl border border-white/[0.06] bg-[#222222] p-4">
+            <label
+              htmlFor="manual-comp-select"
+              className="text-xs font-bold tracking-wider text-[#F15A24] uppercase"
+            >
+              Select Target Competition *
+            </label>
+            <select
+              id="manual-comp-select"
+              value={activeCompetition?.id || ''}
+              onChange={(e) => {
+                setCompetitionId(e.target.value);
+                setCategoryId('');
+                setGroupId('');
+              }}
+              className="h-11 w-full rounded-xl border border-white/10 bg-[#171717] px-3.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none"
+            >
+              {competitions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.competitionType}) — Fee: {formatFee(c.registrationFee)}
+                </option>
+              ))}
+            </select>
+
+            {activeCompetition?.ageEligibility && (
+              <div className="flex items-center gap-2 text-xs text-amber-300">
+                <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" />
+                <span>Eligibility: {activeCompetition.ageEligibility}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Participant Details */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+              Participant Information
+            </h3>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  value={participantName}
+                  onChange={(e) => {
+                    setParticipantName(e.target.value);
+                    clearFieldError('participantName');
+                  }}
+                  placeholder="e.g. Rahul Patil"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                />
+                {fieldErrors.participantName && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.participantName}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clearFieldError('email');
+                  }}
+                  placeholder="athlete@example.com"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                />
+                {fieldErrors.email && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.email}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Mobile Number (10 Digits) *
+                </label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={mobileNumber}
+                  onChange={(e) => {
+                    setMobileNumber(e.target.value.replace(/\D/g, ''));
+                    clearFieldError('mobileNumber');
+                  }}
+                  placeholder="9876543210"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                />
+                {fieldErrors.mobileNumber && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.mobileNumber}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Age (Years) *
+                </label>
+                <input
+                  type="number"
+                  min={10}
+                  max={99}
+                  value={age}
+                  onChange={(e) => {
+                    setAge(e.target.value);
+                    clearFieldError('age');
+                  }}
+                  placeholder="e.g. 25"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                />
+                {fieldErrors.age && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.age}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Gender *
+                </label>
+                <select
+                  value={gender}
+                  onChange={(e) => {
+                    setGender(e.target.value);
+                    clearFieldError('gender');
+                  }}
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                >
+                  {allowedGenders.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  District (Zilha) *
+                </label>
+                <select
+                  value={district}
+                  onChange={(e) => {
+                    setDistrict(e.target.value);
+                    clearFieldError('district');
+                  }}
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                >
+                  {MAHARASHTRA_DISTRICTS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Categories & Groups */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+              Category &amp; Division Selection
+            </h3>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Competition Category *
+                </label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    setGroupId('');
+                    clearFieldError('categoryId');
+                  }}
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                >
+                  {compatibleCategories.length === 0 ? (
+                    <option value="">No categories available</option>
+                  ) : (
+                    compatibleCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name} ({cat.categoryType})
+                      </option>
+                    ))
+                  )}
+                </select>
+                {fieldErrors.categoryId && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.categoryId}
+                  </p>
+                )}
+              </div>
+
+              {availableGroups.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Group / Division (Optional)
+                  </label>
+                  <select
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value)}
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                  >
+                    <option value="">No Group</option>
+                    {availableGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Physical Measurements (not required for Women's Competition) */}
+            {!isWomensCompetition && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Height (cm) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={heightCm}
+                    onChange={(e) => {
+                      setHeightCm(e.target.value);
+                      clearFieldError('heightCm');
+                    }}
+                    placeholder="e.g. 175.5"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.heightCm && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.heightCm}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Weight (kg) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={weightKg}
+                    onChange={(e) => {
+                      setWeightKg(e.target.value);
+                      clearFieldError('weightKg');
+                    }}
+                    placeholder="e.g. 72.0"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.weightKg && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.weightKg}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 4: Representing Gym / Individual */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+              Affiliation
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setRepresentingType('GYM')}
+                className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
+                  representingType === 'GYM'
+                    ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
+                    : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
+                }`}
+              >
+                Representing Gym
+              </button>
+              <button
+                type="button"
+                onClick={() => setRepresentingType('INDIVIDUAL')}
+                className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
+                  representingType === 'INDIVIDUAL'
+                    ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
+                    : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
+                }`}
+              >
+                Individual
+              </button>
+            </div>
+
+            {representingType === 'GYM' && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-300">
+                  Gym Name *
+                </label>
+                <input
+                  type="text"
+                  value={gymName}
+                  onChange={(e) => {
+                    setGymName(e.target.value);
+                    clearFieldError('gymName');
+                  }}
+                  placeholder="e.g. Iron Gym & Fitness"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                />
+                {fieldErrors.gymName && (
+                  <p className="mt-1 text-[11px] text-red-400">
+                    {fieldErrors.gymName}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Section 5: Offline Payment Method */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold tracking-wider text-[#F15A24] uppercase">
+                Payment Method *
+              </h3>
+              <span className="text-xs font-semibold text-white">
+                Fee: {formatFee(activeCompetition?.registrationFee)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {PAYMENT_METHODS.map((pm) => {
+                const Icon = pm.icon;
+                const isSelected = paymentMethod === pm.id;
+                return (
+                  <div
+                    key={pm.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setPaymentMethod(pm.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setPaymentMethod(pm.id);
+                      }
+                    }}
+                    className={`flex flex-col justify-between rounded-xl border p-3.5 cursor-pointer transition-all ${
+                      isSelected
+                        ? pm.accent + ' shadow-lg'
+                        : 'border-white/10 bg-[#222222] text-zinc-300 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Icon className="h-5 w-5" />
+                      {isSelected && <Check className="h-4 w-4" />}
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-xs font-bold">{pm.label}</p>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                        {pm.sublabel}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Footer Submit */}
+          <div className="flex items-center justify-end gap-3 border-t border-white/[0.08] pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#F15A24]/20 hover:brightness-110 disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Registering...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Save Manual Registration</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

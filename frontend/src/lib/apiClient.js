@@ -198,7 +198,18 @@ export const apiClient = {
   },
 
   // Admin Competitions
-  fetchAdminCompetitions: (token) => request('/admin/competitions', { token }),
+  fetchAdminCompetitions: (token, params = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        query.set(key, String(value));
+      }
+    }
+    const qs = query.toString();
+    return request(`/admin/competitions${qs ? `?${qs}` : ''}`, { token });
+  },
+  fetchAdminCompetition: (token, id) =>
+    request(`/admin/competitions/${encodeURIComponent(id)}`, { token }),
   createCompetition: async (token, payload) => {
     const res = await request('/admin/competitions', {
       method: 'POST',
@@ -234,6 +245,24 @@ export const apiClient = {
     apiClient.invalidateCompetitionsCache();
     return res;
   },
+  setCompetitionRegistrationClosing: async (token, id, isRegistrationClosed) => {
+    const res = await request(`/admin/competitions/${id}/registration-status`, {
+      method: 'PATCH',
+      token,
+      body: { isRegistrationClosed },
+    });
+    apiClient.invalidateCompetitionsCache();
+    return res;
+  },
+  toggleCompetitionCompletion: async (token, id, isCompleted) => {
+    const res = await request(`/admin/competitions/${id}/complete`, {
+      method: 'PATCH',
+      token,
+      body: isCompleted !== undefined ? { isCompleted } : {},
+    });
+    apiClient.invalidateCompetitionsCache();
+    return res;
+  },
   uploadCompetitionPoster: async (token, id, file) => {
     const formData = new FormData();
     formData.append('poster', file);
@@ -255,7 +284,7 @@ export const apiClient = {
     return res;
   },
 
-  // Admin Categories
+  // Admin Categories & Groups
   addCategory: (token, competitionId, payload) =>
     request(`/admin/competitions/${competitionId}/categories`, {
       method: 'POST',
@@ -273,6 +302,32 @@ export const apiClient = {
       method: 'DELETE',
       token,
     }),
+  addCategoryGroup: (token, competitionId, categoryId, payload) =>
+    request(
+      `/admin/competitions/${competitionId}/categories/${categoryId}/groups`,
+      {
+        method: 'POST',
+        token,
+        body: payload,
+      }
+    ),
+  updateCategoryGroup: (token, competitionId, categoryId, groupId, payload) =>
+    request(
+      `/admin/competitions/${competitionId}/categories/${categoryId}/groups/${groupId}`,
+      {
+        method: 'PATCH',
+        token,
+        body: payload,
+      }
+    ),
+  deleteCategoryGroup: (token, competitionId, categoryId, groupId) =>
+    request(
+      `/admin/competitions/${competitionId}/categories/${categoryId}/groups/${groupId}`,
+      {
+        method: 'DELETE',
+        token,
+      }
+    ),
 
   // Admin Registrations
   fetchAdminRegistrations: (token, params = {}) => {
@@ -293,4 +348,53 @@ export const apiClient = {
       token,
       body: { registrationStatus },
     }),
+  createManualRegistration: (token, payload) =>
+    request('/admin/registrations/manual', {
+      method: 'POST',
+      token,
+      body: payload,
+    }),
+  verifyRegistrationPayment: (token, id) =>
+    request(`/admin/registrations/${id}/verify-payment`, {
+      method: 'POST',
+      token,
+    }),
+  downloadRegistrationsExport: async (token, params = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        query.set(key, String(value));
+      }
+    }
+    const qs = query.toString();
+    const url = `${env.apiBaseUrl}/admin/registrations/export${qs ? `?${qs}` : ''}`;
+    const rawToken = typeof token === 'string' ? token.trim() : '';
+    const headers = {};
+    if (rawToken) {
+      headers.Authorization = rawToken.startsWith('Bearer ')
+        ? rawToken
+        : `Bearer ${rawToken}`;
+    }
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new ApiError(res.status, errData?.message || 'Export failed.');
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    let filename = `registrations_export_${Date.now()}.${params.format || 'xlsx'}`;
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+    if (match && match[1]) {
+      filename = decodeURIComponent(match[1]);
+    }
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+    return { success: true, filename };
+  },
 };
