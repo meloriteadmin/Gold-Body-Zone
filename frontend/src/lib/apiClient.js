@@ -284,6 +284,42 @@ export const apiClient = {
     return res;
   },
 
+  // Admin Competition Photos
+  fetchCompetitionPhotos: (token, id) =>
+    request(`/admin/competitions/${encodeURIComponent(id)}/photos`, { token }),
+  uploadCompetitionPhotos: async (token, id, files, caption = '') => {
+    const formData = new FormData();
+    const fileList = Array.isArray(files) ? files : [files];
+    for (const file of fileList) {
+      formData.append('photos', file);
+    }
+    if (caption) {
+      formData.append('caption', caption);
+    }
+    const res = await request(
+      `/admin/competitions/${encodeURIComponent(id)}/photos`,
+      {
+        method: 'POST',
+        token,
+        body: formData,
+        isFormData: true,
+      }
+    );
+    apiClient.invalidateCompetitionsCache();
+    return res;
+  },
+  deleteCompetitionPhoto: async (token, id, photoId) => {
+    const res = await request(
+      `/admin/competitions/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`,
+      {
+        method: 'DELETE',
+        token,
+      }
+    );
+    apiClient.invalidateCompetitionsCache();
+    return res;
+  },
+
   // Admin Categories & Groups
   addCategory: (token, competitionId, payload) =>
     request(`/admin/competitions/${competitionId}/categories`, {

@@ -30,6 +30,9 @@ export const ADMIN_COMPETITION_INCLUDE = {
       paymentStatus: true,
     },
   },
+  photos: {
+    orderBy: { sortOrder: 'asc' },
+  },
 };
 
 export async function getDashboardOverview(req, res, next) {
@@ -802,6 +805,158 @@ export async function removeCompetitionPoster(req, res, next) {
 
     res.status(200).json({
       competition: serializeCompetition(updated),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listCompetitionPhotos(req, res, next) {
+  try {
+    const prisma = getPrismaClient();
+    const competition = await prisma.competition.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+
+    if (!competition) {
+      throw new HttpError(404, 'Competition not found.');
+    }
+
+    const photos = await prisma.competitionPhoto.findMany({
+      where: { competitionId: req.params.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    res.status(200).json({
+      photos: photos.map((p) => ({
+        id: p.id,
+        competitionId: p.competitionId,
+        photoUrl: p.photoUrl,
+        caption: p.caption,
+        sortOrder: p.sortOrder,
+        createdAt: p.createdAt
+          ? p.createdAt instanceof Date
+            ? p.createdAt.toISOString()
+            : String(p.createdAt)
+          : null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function uploadCompetitionPhotos(req, res, next) {
+  try {
+    const files = req.files || (req.file ? [req.file] : []);
+    if (!files || files.length === 0) {
+      throw new HttpError(400, 'At least one photo file is required.');
+    }
+
+    const prisma = getPrismaClient();
+    const competition = await prisma.competition.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+
+    if (!competition) {
+      throw new HttpError(404, 'Competition not found.');
+    }
+
+    const currentCount = await prisma.competitionPhoto.count({
+      where: { competitionId: req.params.id },
+    });
+
+    const caption =
+      typeof req.body?.caption === 'string' ? req.body.caption.trim() : null;
+
+    const createdPhotos = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const { publicUrl, storagePath } = await uploadImageToBucket(
+        file,
+        'event-photos'
+      );
+      const photo = await prisma.competitionPhoto.create({
+        data: {
+          competitionId: req.params.id,
+          photoUrl: publicUrl,
+          photoStoragePath: storagePath,
+          caption: caption,
+          sortOrder: currentCount + i,
+        },
+      });
+      createdPhotos.push(photo);
+    }
+
+    const allPhotos = await prisma.competitionPhoto.findMany({
+      where: { competitionId: req.params.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    res.status(201).json({
+      message: `${createdPhotos.length} photo(s) uploaded successfully.`,
+      created: createdPhotos,
+      photos: allPhotos.map((p) => ({
+        id: p.id,
+        competitionId: p.competitionId,
+        photoUrl: p.photoUrl,
+        caption: p.caption,
+        sortOrder: p.sortOrder,
+        createdAt: p.createdAt
+          ? p.createdAt instanceof Date
+            ? p.createdAt.toISOString()
+            : String(p.createdAt)
+          : null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteCompetitionPhoto(req, res, next) {
+  try {
+    const prisma = getPrismaClient();
+    const photo = await prisma.competitionPhoto.findFirst({
+      where: {
+        id: req.params.photoId,
+        competitionId: req.params.id,
+      },
+    });
+
+    if (!photo) {
+      throw new HttpError(404, 'Photo not found for this competition.');
+    }
+
+    if (photo.photoStoragePath) {
+      await deleteImageFromBucket(photo.photoStoragePath);
+    }
+
+    await prisma.competitionPhoto.delete({
+      where: { id: photo.id },
+    });
+
+    const remainingPhotos = await prisma.competitionPhoto.findMany({
+      where: { competitionId: req.params.id },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    res.status(200).json({
+      message: 'Photo deleted successfully.',
+      photos: remainingPhotos.map((p) => ({
+        id: p.id,
+        competitionId: p.competitionId,
+        photoUrl: p.photoUrl,
+        caption: p.caption,
+        sortOrder: p.sortOrder,
+        createdAt: p.createdAt
+          ? p.createdAt instanceof Date
+            ? p.createdAt.toISOString()
+            : String(p.createdAt)
+          : null,
+      })),
     });
   } catch (err) {
     next(err);

@@ -13,14 +13,20 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  Image as ImageIcon,
   Loader2,
   Lock,
   LockOpen,
   MapPin,
+  Pencil,
   RefreshCw,
   Search,
+  Trash2,
+  Upload,
   Users,
 } from 'lucide-react';
+import { CompetitionFormModal } from '../components/admin/CompetitionFormModal.jsx';
+import { EventPhotosManager } from '../components/admin/EventPhotosManager.jsx';
 import { RegistrationDetailModal } from '../components/admin/RegistrationDetailModal.jsx';
 import { StatusBadge } from '../components/common/StatusBadge.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -37,8 +43,7 @@ export function AdminCompetitionDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab =
-    searchParams.get('tab') === 'payments' ? 'payments' : 'registrations';
+  const activeTab = searchParams.get('tab') || 'registrations';
 
   const { accessToken } = useAuth();
   const [competition, setCompetition] = useState(null);
@@ -47,6 +52,11 @@ export function AdminCompetitionDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Modals
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletingCompetition, setDeletingCompetition] = useState(false);
 
   // Registrations tab filters
   const [regSearch, setRegSearch] = useState('');
@@ -87,24 +97,58 @@ export function AdminCompetitionDetailPage() {
   };
 
   // -------------------------------------------------------------
-  // ADMIN ACTIONS
+  // ADMIN ACTIONS (No window.confirm or alert popups)
   // -------------------------------------------------------------
+  const handleSaveCompetition = async (
+    payload,
+    { posterFile, removePoster } = {}
+  ) => {
+    let savedCompetition;
+    const res = await apiClient.updateCompetition(
+      accessToken,
+      competition.id,
+      payload
+    );
+    savedCompetition = res.competition;
+
+    if (removePoster) {
+      const removeRes = await apiClient.removeCompetitionPoster(
+        accessToken,
+        competition.id
+      );
+      savedCompetition = removeRes.competition;
+    } else if (posterFile) {
+      const posterRes = await apiClient.uploadCompetitionPoster(
+        accessToken,
+        competition.id,
+        posterFile
+      );
+      savedCompetition = posterRes.competition;
+    }
+
+    setCompetition(savedCompetition);
+    setSuccessMsg('Competition updated successfully.');
+    setTimeout(() => setSuccessMsg(''), 4000);
+    await loadCompetition();
+  };
+
+  const handleDeleteCompetition = async () => {
+    setDeletingCompetition(true);
+    setError('');
+    try {
+      await apiClient.deleteCompetition(accessToken, competition.id);
+      navigate('/admin/competitions');
+    } catch (err) {
+      setError(err.message || 'Failed to delete competition.');
+      setConfirmDeleteOpen(false);
+    } finally {
+      setDeletingCompetition(false);
+    }
+  };
+
   const handleTogglePublish = async () => {
     if (!competition) return;
     const nextPublished = !competition.isPublished;
-    const actionLabel = nextPublished ? 'Publish' : 'Unpublish';
-    if (
-      !window.confirm(
-        `${actionLabel} "${competition.name}"? ${
-          !nextPublished
-            ? 'The competition will become Unpublished and hidden from public view, but can be republished anytime.'
-            : 'The competition will become visible to participants.'
-        }`
-      )
-    ) {
-      return;
-    }
-
     setActionLoading(true);
     setError('');
     try {
@@ -119,9 +163,7 @@ export function AdminCompetitionDetailPage() {
       );
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setError(
-        err.message || `Failed to ${actionLabel.toLowerCase()} competition.`
-      );
+      setError(err.message || 'Failed to update publication status.');
     } finally {
       setActionLoading(false);
     }
@@ -130,21 +172,6 @@ export function AdminCompetitionDetailPage() {
   const handleToggleRegistrationClosing = async () => {
     if (!competition) return;
     const nextClosed = !competition.isRegistrationClosed;
-    const actionLabel = nextClosed
-      ? 'Close Registrations'
-      : 'Reopen Registrations';
-
-    if (
-      !window.confirm(
-        `${actionLabel} for "${competition.name}"? ${
-          nextClosed
-            ? 'Participants will immediately see Registrations Closed and cannot submit new registrations.'
-            : 'Participants will be able to register again provided the registration deadline has not expired.'
-        }`
-      )
-    ) {
-      return;
-    }
 
     setActionLoading(true);
     setError('');
@@ -171,21 +198,6 @@ export function AdminCompetitionDetailPage() {
   const handleToggleCompletion = async () => {
     if (!competition) return;
     const nextCompleted = !competition.isCompleted;
-    const actionLabel = nextCompleted
-      ? 'Mark as Completed'
-      : 'Revert to In-Progress';
-
-    if (
-      !window.confirm(
-        `${actionLabel} for "${competition.name}"? ${
-          nextCompleted
-            ? 'This competition will move to Competition History as a completed event. New registrations will be blocked.'
-            : 'This competition will be reopened from History.'
-        }`
-      )
-    ) {
-      return;
-    }
 
     setActionLoading(true);
     setError('');
@@ -401,6 +413,27 @@ export function AdminCompetitionDetailPage() {
 
         {/* State-Sensitive Actions */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Upload Event Photos */}
+          <button
+            type="button"
+            onClick={() => setTab('gallery')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            <span>Upload Photos</span>
+          </button>
+
+          {/* Edit Competition */}
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            disabled={actionLoading}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:border-[#F15A24]/50 hover:bg-white/5 disabled:opacity-50"
+          >
+            <Pencil className="h-3.5 w-3.5 text-[#F15A24]" />
+            Edit
+          </button>
+
           {/* Close / Reopen Registrations */}
           {!competition.isCompleted &&
             (competition.isRegistrationClosed ? (
@@ -467,6 +500,17 @@ export function AdminCompetitionDetailPage() {
             {competition.isCompleted
               ? 'Mark as In-Progress'
               : 'Mark as Completed'}
+          </button>
+
+          {/* Delete Competition */}
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteOpen(true)}
+            disabled={actionLoading}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+            Delete
           </button>
         </div>
       </div>
@@ -560,6 +604,14 @@ export function AdminCompetitionDetailPage() {
                   Deadline: {formatDate(competition.registrationDeadline)}
                 </span>
                 <span>Fee: {formatFee(competition.registrationFee)}</span>
+                <button
+                  type="button"
+                  onClick={() => setTab('gallery')}
+                  className="inline-flex items-center gap-1.5 text-zinc-300 hover:text-[#F15A24] transition-colors"
+                >
+                  <ImageIcon className="h-3.5 w-3.5 text-[#F15A24]" />
+                  <span>Photos: {competition.photos?.length || 0}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -577,6 +629,11 @@ export function AdminCompetitionDetailPage() {
               id: 'payments',
               label: `Payments (${registrations.filter((r) => r.paymentStatus === 'PAID').length})`,
               icon: CreditCard,
+            },
+            {
+              id: 'gallery',
+              label: `Event Photos (${competition.photos?.length || 0})`,
+              icon: ImageIcon,
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1019,6 +1076,90 @@ export function AdminCompetitionDetailPage() {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 3: EVENT PHOTOS GALLERY */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'gallery' && (
+        <EventPhotosManager
+          competitionId={competition.id}
+          competitionName={competition.name}
+          initialPhotos={competition.photos || []}
+          onPhotosUpdated={(photos) =>
+            setCompetition((prev) => ({ ...prev, photos }))
+          }
+        />
+      )}
+
+      {/* Edit Competition Modal */}
+      <CompetitionFormModal
+        isOpen={modalOpen}
+        editingCompetition={competition}
+        onClose={() => setModalOpen(false)}
+        onSave={handleSaveCompetition}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#171717] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="rounded-xl bg-red-500/10 p-2.5">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div>
+                <h3
+                  id="delete-dialog-title"
+                  className="font-display text-lg font-bold text-white uppercase"
+                >
+                  Delete Competition?
+                </h3>
+                <p className="text-xs text-zinc-400">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#A1A1AA] leading-relaxed">
+              Are you sure you want to delete <strong className="text-white">"{competition.name}"</strong>?
+              {stats.total > 0 && (
+                <span className="block mt-1.5 text-amber-300">
+                  Note: This competition has {stats.total} registration(s).
+                </span>
+              )}
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                disabled={deletingCompetition}
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteCompetition}
+                disabled={deletingCompetition}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-red-500 disabled:opacity-50"
+              >
+                {deletingCompetition ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Delete Competition</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -37,6 +37,7 @@ import { StatusBadge } from '../components/common/StatusBadge.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import { supabase } from '../lib/supabase.js';
+import { getCompetitionPoster } from '../utils/competitionHelpers.js';
 import { formatDate, formatDateTime, formatFee } from '../utils/formatters.js';
 
 const PAGE_SIZE = 15;
@@ -421,37 +422,54 @@ export function RegistrationsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {filteredCompetitions.map((comp) => (
-              <div
-                key={comp.id}
-                onClick={() => handleSelectCompetition(comp)}
-                className="group flex cursor-pointer flex-col justify-between rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-6 shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:border-[#F15A24]/60 hover:shadow-[#F15A24]/10"
-              >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-md border border-[#F15A24]/30 bg-[#F15A24]/10 px-2.5 py-1 text-xs font-bold tracking-wider text-[#F15A24] uppercase">
+            {filteredCompetitions.map((comp) => {
+              const posterSrc = getCompetitionPoster(comp);
+              return (
+                <div
+                  key={comp.id}
+                  onClick={() => handleSelectCompetition(comp)}
+                  className="group flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1a1a1a] shadow-lg transition-all duration-200 hover:-translate-y-1 hover:border-[#F15A24]/60 hover:shadow-xl hover:shadow-[#F15A24]/10"
+                >
+                  {/* Poster Thumbnail */}
+                  <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#121212]">
+                    <img
+                      src={posterSrc}
+                      alt={`${comp.name} poster`}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    <div className="absolute top-3 left-3">
+                      <span className="rounded-md border border-black/40 bg-black/60 px-2 py-0.5 text-[11px] font-bold tracking-wider text-[#F15A24] uppercase backdrop-blur-md">
                         {comp.competitionType}
                       </span>
                     </div>
-
-                    <h3 className="font-display mt-3 text-xl font-bold tracking-wide text-white transition-colors group-hover:text-[#F15A24]">
-                      {comp.name}
-                    </h3>
-
-                    <div className="mt-3 flex items-center gap-2 text-xs text-[#A1A1AA]">
-                      <Calendar className="h-4 w-4 text-[#F15A24]" />
-                      <span>{formatDate(comp.eventDate)}</span>
+                    <div className="absolute right-3 bottom-2.5">
+                      <span className="font-display text-base font-extrabold text-[#F15A24] drop-shadow-md">
+                        {formatFee(comp.registrationFee)}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="mt-6 flex items-center justify-between border-t border-white/[0.08] pt-4 text-xs font-bold tracking-wider text-[#F15A24] uppercase">
-                    <span>View Registrations</span>
-                    <span className="transition-transform group-hover:translate-x-1">
-                      →
-                    </span>
+                  <div className="p-4 space-y-3">
+                    <h3 className="font-display text-lg font-bold tracking-wide text-white transition-colors group-hover:text-[#F15A24]">
+                      {comp.name}
+                    </h3>
+
+                    <div className="flex items-center gap-2 text-xs text-[#A1A1AA]">
+                      <Calendar className="h-4 w-4 text-[#F15A24]" />
+                      <span>{formatDate(comp.eventDate)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-white/[0.08] pt-3 text-xs font-bold tracking-wider text-[#F15A24] uppercase">
+                      <span>View Registrations</span>
+                      <span className="transition-transform group-hover:translate-x-1">
+                        →
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))}
+              );
+            })}
           </div>
         )}
 
@@ -648,8 +666,16 @@ export function RegistrationsPage() {
       {/* Competition Summary Banner */}
       <section className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#222222] via-[#1b1b1b] to-[#171717] p-6 shadow-xl">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-start gap-4">
+            {activeCompetition && (
+              <img
+                src={getCompetitionPoster(activeCompetition)}
+                alt={activeCompetition.name}
+                className="h-20 w-16 shrink-0 rounded-xl border border-white/10 object-cover shadow-md"
+              />
+            )}
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md border border-[#F15A24]/30 bg-[#F15A24]/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-[#F15A24] uppercase">
                 {activeCompetition?.competitionType}
               </span>
@@ -674,6 +700,7 @@ export function RegistrationsPage() {
               <span>Fee: {formatFee(activeCompetition?.registrationFee)}</span>
             </div>
           </div>
+        </div>
 
           {/* Quick Stats Pills */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

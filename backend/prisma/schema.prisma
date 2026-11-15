@@ -94,6 +94,7 @@ model Competition {
   updatedAt            DateTime              @updatedAt @map("updated_at")
   categories           CompetitionCategory[]
   registrations        Registration[]
+  photos               CompetitionPhoto[]
 
   @@index([isPublished, eventDate])
   @@map("competitions")
@@ -191,4 +192,19 @@ model Payment {
 
   @@index([status])
   @@map("payments")
+}
+
+model CompetitionPhoto {
+  id               String      @id @default(uuid())
+  competitionId    String      @map("competition_id")
+  photoUrl         String      @map("photo_url")
+  photoStoragePath String      @map("photo_storage_path")
+  caption          String?
+  sortOrder        Int         @default(0) @map("sort_order")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  competition      Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@index([competitionId, sortOrder])
+  @@map("competition_photos")
 }

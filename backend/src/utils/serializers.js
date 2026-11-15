@@ -114,6 +114,18 @@ export function serializeCompetition(competition, options = {}) {
           sortOrder: g.sortOrder,
         })),
       })),
+    photos: (competition.photos || []).map((p) => ({
+      id: p.id,
+      competitionId: p.competitionId,
+      photoUrl: p.photoUrl,
+      caption: p.caption,
+      sortOrder: p.sortOrder,
+      createdAt: p.createdAt
+        ? p.createdAt instanceof Date
+          ? p.createdAt.toISOString()
+          : String(p.createdAt)
+        : null,
+    })),
   };
 }
 
@@ -184,8 +196,18 @@ export function serializeRegistration(registration) {
         : registration.payment?.cashfreeOrderId
           ? 'Online'
           : 'N/A'),
-    createdAt: registration.createdAt.toISOString(),
-    updatedAt: registration.updatedAt.toISOString(),
+    createdAt:
+      registration.createdAt instanceof Date
+        ? registration.createdAt.toISOString()
+        : registration.createdAt
+          ? new Date(registration.createdAt).toISOString()
+          : new Date().toISOString(),
+    updatedAt:
+      registration.updatedAt instanceof Date
+        ? registration.updatedAt.toISOString()
+        : registration.updatedAt
+          ? new Date(registration.updatedAt).toISOString()
+          : new Date().toISOString(),
     competition: registration.competition
       ? {
           id: registration.competition.id,

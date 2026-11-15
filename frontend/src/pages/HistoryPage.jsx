@@ -1,28 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  CreditCard,
-  Eye,
-  Filter,
   History,
-  Layers,
   Loader2,
-  MapPin,
-  RefreshCw,
   RotateCcw,
   Search,
-  Users,
 } from 'lucide-react';
+import { CompetitionCard } from '../components/admin/CompetitionCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
-import { formatDate, formatFee } from '../utils/formatters.js';
 
 export function HistoryPage() {
-  const navigate = useNavigate();
   const { accessToken } = useAuth();
 
   const [competitions, setCompetitions] = useState([]);
@@ -32,7 +20,6 @@ export function HistoryPage() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [togglingId, setTogglingId] = useState(null);
 
   const loadHistory = useCallback(async () => {
     if (!accessToken) return;
@@ -53,22 +40,6 @@ export function HistoryPage() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
-
-  const handleToggleCompletion = async (comp) => {
-    const confirmMessage = `Re-open "${comp.name}"? This competition will be removed from History and restored to Active Competitions.`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    setTogglingId(comp.id);
-    try {
-      await apiClient.toggleCompetitionCompletion(accessToken, comp.id, false);
-      setCompetitions((prev) => prev.filter((c) => c.id !== comp.id));
-    } catch (err) {
-      alert(err.message || 'Failed to update competition completion status.');
-    } finally {
-      setTogglingId(null);
-    }
-  };
 
   const filteredCompetitions = useMemo(() => {
     return competitions.filter((comp) => {
@@ -110,35 +81,24 @@ export function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      {/* Header */}
-      <section className="flex flex-col justify-between gap-4 rounded-2xl border border-white/10 bg-gradient-to-br from-[#222222] via-[#1b1b1b] to-[#171717] p-6 sm:flex-row sm:items-center">
+      {/* Header Bar */}
+      <div className="flex flex-col justify-between gap-4 rounded-2xl border border-white/[0.08] bg-[#222222] p-5 sm:flex-row sm:items-center">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#F15A24]/20 text-[#F15A24]">
-              <History className="h-4 w-4" />
-            </span>
-            <p className="text-xs font-bold tracking-[0.2em] text-[#F15A24] uppercase">
-              Archived Events
-            </p>
-          </div>
-          <h2 className="font-display mt-2 text-3xl font-extrabold tracking-wide text-white uppercase sm:text-4xl">
+          <h2 className="font-display text-2xl font-extrabold tracking-wide text-white uppercase">
             Competition History
           </h2>
-          <p className="mt-1 text-sm text-[#A1A1AA]">
-            Competitions explicitly marked as Completed by administrators.
+          <p className="mt-0.5 text-xs text-[#A1A1AA]">
+            Archive of concluded and completed bodybuilding events. Click on any
+            card to view details, registrations, and event photos.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={loadHistory}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#222222] px-4 py-2.5 text-xs font-bold tracking-wider text-white uppercase transition-colors hover:bg-white/5"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-[#F15A24]' : ''}`} />
-          Refresh
-        </button>
-      </section>
+        <div className="flex items-center gap-2">
+          <span className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-400">
+            {competitions.length} Completed Event(s)
+          </span>
+        </div>
+      </div>
 
       {error && (
         <div
@@ -150,11 +110,11 @@ export function HistoryPage() {
         </div>
       )}
 
-      {/* Filter and Search Bar with Event Type and Date Range */}
+      {/* Filter Toolbar */}
       <div className="space-y-3 rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Search */}
-          <div className="relative">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          {/* Search Box */}
+          <div className="relative flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#A1A1AA]" />
             <input
               type="text"
@@ -230,106 +190,10 @@ export function HistoryPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {filteredCompetitions.map((comp) => {
-            const stats = comp.registrationStats || {
-              total: 0,
-              confirmed: 0,
-              pending: 0,
-              paid: 0,
-              unpaid: 0,
-              totalRevenue: 0,
-            };
-            const isToggling = togglingId === comp.id;
-
-            return (
-              <div
-                key={comp.id}
-                className="flex flex-col justify-between rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-6 shadow-lg transition-all hover:border-[#F15A24]/40"
-              >
-                <div className="space-y-4">
-                  {/* Top Bar: Badges */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="rounded-lg border border-[#F15A24]/30 bg-[#F15A24]/10 px-2.5 py-1 text-xs font-bold tracking-wider text-[#F15A24] uppercase">
-                      {comp.competitionType}
-                    </span>
-
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Completed
-                    </span>
-                  </div>
-
-                  {/* Competition Title */}
-                  <div>
-                    <h3 className="font-display text-xl font-bold tracking-wide text-white">
-                      {comp.name}
-                    </h3>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#A1A1AA]">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-[#F15A24]" />
-                        {formatDate(comp.eventDate)}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 text-[#F15A24]" />
-                        {comp.venue || 'No venue specified'}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Layers className="h-3.5 w-3.5 text-[#F15A24]" />
-                        {comp.categories?.length || 0} Categories
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Metrics Grid */}
-                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/[0.06] bg-[#141414] p-3.5">
-                    <div>
-                      <p className="text-[10px] font-bold tracking-wider text-[#A1A1AA] uppercase">
-                        Total Registrations
-                      </p>
-                      <p className="font-display mt-0.5 text-2xl font-extrabold text-white tabular-nums">
-                        {stats.total}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold tracking-wider text-emerald-400 uppercase">
-                        Payment Collection
-                      </p>
-                      <p className="font-display mt-0.5 text-2xl font-extrabold text-emerald-400 tabular-nums">
-                        ₹{(stats.totalRevenue || 0).toLocaleString('en-IN')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Actions */}
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] pt-4">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleCompletion(comp)}
-                    disabled={isToggling}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-[#A1A1AA] transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    {isToggling ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Clock className="h-3.5 w-3.5" />
-                    )}
-                    Revert to In-Progress
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/admin/competitions/${comp.id}`)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-4 py-2 text-xs font-bold tracking-wider text-white uppercase shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    View Details
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {filteredCompetitions.map((comp) => (
+            <CompetitionCard key={comp.id} competition={comp} />
+          ))}
         </div>
       )}
     </div>

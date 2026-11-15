@@ -20,6 +20,9 @@ import {
   uploadAdminAvatar,
   uploadCompetitionPoster,
   removeCompetitionPoster,
+  listCompetitionPhotos,
+  uploadCompetitionPhotos,
+  deleteCompetitionPhoto,
 } from '../controllers/admin.controller.js';
 import {
   createManualRegistration,
@@ -82,6 +85,18 @@ router.delete(
   '/competitions/:id/poster',
   adminSensitiveLimiter,
   removeCompetitionPoster
+);
+
+router.get('/competitions/:id/photos', listCompetitionPhotos);
+router.post(
+  '/competitions/:id/photos',
+  uploadImageMiddleware.array('photos', 10),
+  uploadCompetitionPhotos
+);
+router.delete(
+  '/competitions/:id/photos/:photoId',
+  adminSensitiveLimiter,
+  deleteCompetitionPhoto
 );
 
 router.post('/competitions/:id/categories', addCategory);
