@@ -268,6 +268,41 @@ export function PublicRegistrationModal({
     });
   };
 
+  const handleEmailCheck = async (emailToCheck) => {
+    const cleanEmail = cleanText(emailToCheck).toLowerCase();
+    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail) || !activeCompetition?.id) {
+      return;
+    }
+
+    try {
+      const res = await apiClient.checkCompetitionRegistration(activeCompetition.id, {
+        email: cleanEmail,
+      });
+
+      if (res?.registered && res?.isPaid) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          email: 'This candidate is already registered for this competition.',
+        }));
+        setFormError('This candidate is already registered for this competition.');
+      } else {
+        setFieldErrors((prev) => {
+          if (prev.email === 'This candidate is already registered for this competition.') {
+            const next = { ...prev };
+            delete next.email;
+            return next;
+          }
+          return prev;
+        });
+        if (formError === 'This candidate is already registered for this competition.') {
+          setFormError('');
+        }
+      }
+    } catch {
+      // Ignore background check failure
+    }
+  };
+
   const validateFields = () => {
     const errors = {};
 
@@ -277,7 +312,9 @@ export function PublicRegistrationModal({
     }
 
     const cleanEmail = cleanText(email).toLowerCase();
-    if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail) || cleanEmail.length > 160) {
+    if (fieldErrors.email === 'This candidate is already registered for this competition.') {
+      errors.email = 'This candidate is already registered for this competition.';
+    } else if (!cleanEmail || !EMAIL_REGEX.test(cleanEmail) || cleanEmail.length > 160) {
       errors.email = 'Please enter a valid email address.';
     }
 
@@ -406,7 +443,11 @@ export function PublicRegistrationModal({
     const errors = validateFields();
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setFormError('Please review the highlighted fields below.');
+      setFormError(
+        errors.email === 'This candidate is already registered for this competition.'
+          ? 'This candidate is already registered for this competition.'
+          : 'Please review the highlighted fields below.'
+      );
       return;
     }
 
@@ -445,15 +486,17 @@ export function PublicRegistrationModal({
       await runCashfreeOrStoreResult(res);
     } catch (err) {
       const msg = err.message || 'Failed to submit registration.';
-      setFormError(msg);
-      if (err.status === 409 && /already registered/i.test(msg)) {
-        if (onRegistrationUpdated && activeCompetition?.id) {
-          onRegistrationUpdated({
-            competitionId: activeCompetition.id,
-            registrationStatus: 'CONFIRMED',
-            paymentStatus: 'PAID',
-          });
-        }
+      if (
+        err.status === 409 &&
+        (/already registered/i.test(msg) || /duplicate/i.test(msg) || /candidate/i.test(msg))
+      ) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          email: 'This candidate is already registered for this competition.',
+        }));
+        setFormError('This candidate is already registered for this competition.');
+      } else {
+        setFormError(msg);
       }
     } finally {
       setSubmitting(false);
@@ -771,7 +814,14 @@ export function PublicRegistrationModal({
                       onChange={(e) => {
                         setEmail(e.target.value);
                         clearFieldError('email');
+                        if (
+                          formError ===
+                          'This candidate is already registered for this competition.'
+                        ) {
+                          setFormError('');
+                        }
                       }}
+                      onBlur={(e) => handleEmailCheck(e.target.value)}
                       placeholder="athlete@example.com"
                       aria-invalid={Boolean(fieldErrors.email)}
                       aria-describedby={

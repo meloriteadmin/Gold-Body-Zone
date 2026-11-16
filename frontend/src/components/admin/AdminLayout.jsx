@@ -98,7 +98,7 @@ export function AdminLayout() {
             </div>
             <div>
               <p className="font-display text-xl font-extrabold tracking-wider text-white uppercase">
-                IRONSTAGE
+                GOLD BODY ZONE
               </p>
               <p className="text-[11px] font-semibold tracking-widest text-[#F15A24] uppercase">
                 Admin Panel

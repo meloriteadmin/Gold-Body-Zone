@@ -22,10 +22,10 @@ export function PublicFooter() {
           <div>
             <Link
               to="/"
-              className="font-display inline-block text-3xl leading-none font-extrabold tracking-wide uppercase"
+              className="font-display inline-block text-2xl leading-none font-extrabold tracking-wide uppercase sm:text-3xl"
             >
-              <span className="text-white">IRON</span>
-              <span className="text-[#F15A24]">STAGE</span>
+              <span className="text-white">GOLD BODY </span>
+              <span className="text-[#F15A24]">ZONE</span>
             </Link>
             <p className="mt-3 text-sm text-[#A1A1AA]">
               Built for athletes. Driven by competition.
@@ -56,7 +56,7 @@ export function PublicFooter() {
         </div>
 
         <div className="mt-8 border-t border-white/[0.08] pt-6 text-xs text-[#A1A1AA]">
-          <p>© {new Date().getFullYear()} IRONSTAGE. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} GOLD BODY ZONE. All rights reserved.</p>
         </div>
       </div>
     </footer>

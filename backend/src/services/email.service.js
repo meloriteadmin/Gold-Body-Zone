@@ -444,12 +444,12 @@ export async function sendTestEmail(
     };
   }
 
-  const subject = 'IRONSTAGE — SMTP Verification Test Email';
+  const subject = 'GOLD BODY ZONE — SMTP Verification Test Email';
   const timestamp = new Date().toISOString();
   const text = [
     'Hello,',
     '',
-    'This is a test email from your IRONSTAGE backend to verify that Nodemailer SMTP settings are working properly.',
+    'This is a test email from your GOLD BODY ZONE backend to verify that Nodemailer SMTP settings are working properly.',
     '',
     `SMTP Host: ${env.smtpHost}`,
     `SMTP Port: ${env.smtpPort}`,
@@ -465,7 +465,7 @@ export async function sendTestEmail(
     <div style="background:#101010;color:#ffffff;font-family:Arial,sans-serif;padding:32px;">
       <div style="max-width:600px;margin:0 auto;background:#171717;border:1px solid #2a2a2a;border-radius:16px;padding:28px;">
         <p style="margin:0;color:#F15A24;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
-          IRONSTAGE System Test
+          GOLD BODY ZONE System Test
         </p>
         <h1 style="margin:8px 0 16px;font-size:22px;color:#ffffff;">
           SMTP Delivery Verified

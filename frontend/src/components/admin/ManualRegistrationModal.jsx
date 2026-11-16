@@ -90,7 +90,6 @@ export function ManualRegistrationModal({
 
   // Step 2: Payment Selection State (Exactly 2 options: 'UPI' or 'CASH')
   const [paymentOption, setPaymentOption] = useState('UPI'); // 'UPI' | 'CASH'
-  const [cashReference, setCashReference] = useState('');
   const [cashConfirmed, setCashConfirmed] = useState(false);
 
   // Submission & Validation State
@@ -131,7 +130,6 @@ export function ManualRegistrationModal({
       setGymName('');
       setStep('DETAILS');
       setPaymentOption('UPI');
-      setCashReference('');
       setCashConfirmed(false);
       setFormError('');
       setFieldErrors({});
@@ -411,7 +409,6 @@ export function ManualRegistrationModal({
     setSubmitting(true);
     try {
       const payload = buildPayload('CASH', {
-        paymentReference: cashReference.trim() || undefined,
         offlineConfirmed: true,
       });
 
@@ -1115,22 +1112,6 @@ export function ManualRegistrationModal({
             {/* Cash Option Container */}
             {paymentOption === 'CASH' && (
               <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold tracking-wider text-emerald-400 uppercase">
-                    Transaction / Receipt Reference
-                  </label>
-                  <input
-                    type="text"
-                    value={cashReference}
-                    onChange={(e) => setCashReference(e.target.value)}
-                    placeholder="e.g. Cash Receipt #104, Desk Handover"
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[#171717] px-3 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <p className="text-[11px] text-zinc-400">
-                    Optional reference for admin bookkeeping and receipt logs.
-                  </p>
-                </div>
-
                 {/* Explicit Admin Confirmation Checkbox */}
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5">
                   <label className="flex items-start gap-3 cursor-pointer select-none">

@@ -24,10 +24,10 @@ export function PublicNavbar() {
       <div className="relative mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-4 sm:px-9">
         <Link
           to="/"
-          className="font-display text-3xl leading-none font-extrabold tracking-wide uppercase focus:outline-none sm:text-4xl"
+          className="font-display text-2xl leading-none font-extrabold tracking-wide uppercase focus:outline-none sm:text-4xl"
         >
-          <span className="text-white">IRON</span>
-          <span className="text-[#F15A24]">STAGE</span>
+          <span className="text-white">GOLD BODY </span>
+          <span className="text-[#F15A24]">ZONE</span>
         </Link>
 
         {/* Rounded Dark Navigation Pill - Centred Horizontally */}

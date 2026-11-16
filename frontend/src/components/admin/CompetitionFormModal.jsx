@@ -636,7 +636,7 @@ export function CompetitionFormModal({
                     <p className="mt-1 text-[11px] text-[#A1A1AA]">
                       Click to select JPG, JPEG, PNG, or WebP up to 5 MB from your Mac.
                       <br />
-                      If left empty, a neutral IronStage placeholder will be displayed automatically.
+                      If left empty, a neutral GOLD BODY ZONE placeholder will be displayed automatically.
                     </p>
                     <input
                       type="file"

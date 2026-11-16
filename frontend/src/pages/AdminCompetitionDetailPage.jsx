@@ -1004,14 +1004,6 @@ export function AdminCompetitionDetailPage() {
                       <FileText className="h-4 w-4 text-blue-400" />
                       <span>CSV Document (.csv)</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleExport('pdf')}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-[#F15A24]/15 hover:text-[#F15A24]"
-                    >
-                      <FileText className="h-4 w-4 text-rose-400" />
-                      <span>PDF Document (.pdf)</span>
-                    </button>
                   </div>
                 </>
               )}

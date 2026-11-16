@@ -432,7 +432,7 @@ export async function createPublicRegistration(req, res, next) {
     }
 
     // Check existing record before creating a new row so retries never duplicate registrations.
-    let existing = await prisma.registration.findUnique({
+    const existing = await prisma.registration.findUnique({
       where: {
         competitionId_email: {
           competitionId: competition.id,
@@ -442,16 +442,6 @@ export async function createPublicRegistration(req, res, next) {
       include: PUBLIC_REG_INCLUDE,
     });
 
-    if (!existing && input.mobileNumber) {
-      existing = await prisma.registration.findFirst({
-        where: {
-          competitionId: competition.id,
-          mobileNumber: input.mobileNumber,
-        },
-        include: PUBLIC_REG_INCLUDE,
-      });
-    }
-
     if (existing) {
       if (
         existing.paymentStatus === 'PAID' &&
@@ -459,7 +449,7 @@ export async function createPublicRegistration(req, res, next) {
       ) {
         throw new HttpError(
           409,
-          'You have already registered and completed payment for this competition.'
+          'This candidate is already registered for this competition.'
         );
       }
 
@@ -469,7 +459,7 @@ export async function createPublicRegistration(req, res, next) {
           existing.payment.cashfreeOrderId
         );
         if (orderState.nextStatus === 'PAID') {
-          const settled = await settleVerifiedPayment({
+          await settleVerifiedPayment({
             orderId: existing.payment.cashfreeOrderId,
             nextStatus: 'PAID',
             cfPaymentId: orderState.cfPaymentId,
@@ -479,7 +469,7 @@ export async function createPublicRegistration(req, res, next) {
           });
           throw new HttpError(
             409,
-            `Your previous payment (${settled.registrationCode}) is already verified and registered.`
+            'This candidate is already registered for this competition.'
           );
         }
       }
@@ -571,7 +561,7 @@ export async function createPublicRegistration(req, res, next) {
       next(
         new HttpError(
           409,
-          'A registration with this email already exists for this competition.'
+          'This candidate is already registered for this competition.'
         )
       );
       return;
@@ -857,8 +847,11 @@ export async function checkCompetitionRegistration(req, res, next) {
 
     const orConditions = [];
     if (registrationId) orConditions.push({ id: registrationId });
-    if (email) orConditions.push({ email });
-    if (mobileNumber) orConditions.push({ mobileNumber });
+    if (email) {
+      orConditions.push({ email });
+    } else if (mobileNumber) {
+      orConditions.push({ mobileNumber });
+    }
 
     const registration = await prisma.registration.findFirst({
       where: {

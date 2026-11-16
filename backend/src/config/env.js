@@ -43,7 +43,7 @@ export const env = {
   get emailFrom() {
     return (
       this.smtpFrom ||
-      (this.smtpUser ? `IRONSTAGE <${this.smtpUser}>` : '')
+      (this.smtpUser ? `GOLD BODY ZONE <${this.smtpUser}>` : '')
     );
   },
   set emailFrom(val) {

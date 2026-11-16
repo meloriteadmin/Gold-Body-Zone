@@ -1,5 +1,7 @@
-const STORAGE_REG_PREFIX = 'ironstage_comp_reg_';
-const STORAGE_IDENTITY_KEY = 'ironstage_participant_identity';
+const STORAGE_REG_PREFIX = 'gbz_comp_reg_';
+const LEGACY_STORAGE_REG_PREFIX = 'ironstage_comp_reg_';
+const STORAGE_IDENTITY_KEY = 'gbz_participant_identity';
+const LEGACY_STORAGE_IDENTITY_KEY = 'ironstage_participant_identity';
 
 export function saveParticipantRegistration(competitionId, registration, statusToken = null) {
   if (!competitionId || !registration?.id) return;
@@ -32,7 +34,9 @@ export function saveParticipantRegistration(competitionId, registration, statusT
 export function getParticipantRegistration(competitionId) {
   if (!competitionId) return null;
   try {
-    const raw = localStorage.getItem(`${STORAGE_REG_PREFIX}${competitionId}`);
+    const raw =
+      localStorage.getItem(`${STORAGE_REG_PREFIX}${competitionId}`) ||
+      localStorage.getItem(`${LEGACY_STORAGE_REG_PREFIX}${competitionId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -57,7 +61,9 @@ export function saveParticipantIdentity({ email, mobileNumber, participantName }
 
 export function getParticipantIdentity() {
   try {
-    const raw = localStorage.getItem(STORAGE_IDENTITY_KEY);
+    const raw =
+      localStorage.getItem(STORAGE_IDENTITY_KEY) ||
+      localStorage.getItem(LEGACY_STORAGE_IDENTITY_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;

@@ -118,7 +118,7 @@ export function PublicHomePage() {
 
   return (
     <main className="overflow-x-hidden bg-[#101010]">
-      {/* IronStage Hero Section */}
+      {/* GOLD BODY ZONE Hero Section */}
       <section className="gymx-hero-stage" aria-label="Hero">
         {/* Background Artwork, Fire Smoke & Floating Embers */}
         <div className="gymx-hero-bg" aria-hidden="true">
@@ -258,10 +258,11 @@ Choose eligible categories based on age, gender and competition rules.          
                 <ClipboardCheck className="h-5 w-5" />
               </div>
               <h2 className="font-display mt-5 text-2xl font-bold tracking-wide text-white uppercase">
-                Registration Confirmation & Tracking
+                Registration Confirmation & Stage Check-In
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-[#A1A1AA]">
-Get a unique Registration ID and track your entries through the My Registrations portal.              </p>
+                Receive instant confirmation with a verified Registration ID for stage entry and weigh-in verification.
+              </p>
             </div>
           </div>
         </div>

@@ -164,7 +164,7 @@ export function AdminResetPasswordPage() {
             <KeyRound className="h-6 w-6 text-white" />
           </div>
           <p className="mt-4 text-[11px] font-bold tracking-[0.22em] text-[#F15A24] uppercase">
-            IRONSTAGE Admin
+            GOLD BODY ZONE Admin
           </p>
           <h1 className="font-display mt-1 text-3xl font-extrabold tracking-wide uppercase">
             Change Password

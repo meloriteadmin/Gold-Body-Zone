@@ -12,7 +12,7 @@ function maskPassword(pass) {
 
 async function main() {
   console.log('====================================================');
-  console.log('       IRONSTAGE SMTP Connection & Delivery Test    ');
+  console.log('     GOLD BODY ZONE SMTP Connection & Delivery Test ');
   console.log('====================================================');
 
   console.log('\n[1] Checking Configured Environment Variables:');

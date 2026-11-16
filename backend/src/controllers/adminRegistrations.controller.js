@@ -10,7 +10,6 @@ import { sendRegistrationConfirmationEmail } from '../services/email.service.js'
 import {
   generateRegistrationsCsv,
   generateRegistrationsExcel,
-  generateRegistrationsPdf,
 } from '../services/export.service.js';
 import { settleVerifiedPayment } from '../services/paymentSettlement.service.js';
 import { HttpError } from '../utils/httpError.js';
@@ -548,7 +547,7 @@ export async function createManualRegistration(req, res, next) {
             customerName: registration.participantName,
             customerEmail: registration.email,
             customerPhone: registration.mobileNumber,
-            returnUrl: `${env.appBaseUrl || 'https://ironstage.fit'}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
+            returnUrl: `${env.appBaseUrl || 'https://goldbodyzone.fit'}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
           });
 
           const qrRes = await createCashfreeUpiQr({
@@ -578,7 +577,7 @@ export async function createManualRegistration(req, res, next) {
         }
       } else {
         const QRCode = (await import('qrcode')).default;
-        const dummyPayload = `upi://pay?pa=cashfree@icici&pn=IRONSTAGE&tr=${cashfreeOrderId}&am=${competition.registrationFee}&cu=INR`;
+        const dummyPayload = `upi://pay?pa=cashfree@icici&pn=GOLD+BODY+ZONE&tr=${cashfreeOrderId}&am=${competition.registrationFee}&cu=INR`;
         const qrDataUrl = await QRCode.toDataURL(dummyPayload, {
           margin: 2,
           width: 320,
@@ -674,7 +673,7 @@ export async function verifyRegistrationPayment(req, res, next) {
 }
 
 /**
- * Export competition registration list in Excel (.xlsx), CSV (.csv), or PDF (.pdf).
+ * Export competition registration list in Excel (.xlsx) or CSV (.csv).
  * Exports all matching records respecting search, category, group, status, and source filters.
  */
 export async function exportRegistrations(req, res, next) {
@@ -686,10 +685,10 @@ export async function exportRegistrations(req, res, next) {
         ? req.query.format.trim().toLowerCase()
         : 'xlsx';
 
-    if (!['xlsx', 'csv', 'pdf'].includes(format)) {
+    if (!['xlsx', 'csv'].includes(format)) {
       throw new HttpError(
         400,
-        'Invalid export format. Expected xlsx, csv, or pdf.'
+        'Invalid export format. Expected xlsx or csv.'
       );
     }
 
@@ -776,7 +775,7 @@ export async function exportRegistrations(req, res, next) {
     const safeCompName = compName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const dateStr = new Date().toISOString().slice(0, 10);
     const sourceLabel = source === 'ONLINE' ? 'Online' : source === 'MANUAL' ? 'Manual' : 'All';
-    const filename = `IRONSTAGE_${safeCompName}_Registrations_${sourceLabel}_${dateStr}`;
+    const filename = `GOLD_BODY_ZONE_${safeCompName}_Registrations_${sourceLabel}_${dateStr}`;
 
     const options = {
       sourceFilter: sourceLabel,
@@ -802,16 +801,6 @@ export async function exportRegistrations(req, res, next) {
       res.setHeader(
         'Content-Disposition',
         `attachment; filename="${filename}.xlsx"`
-      );
-      return res.status(200).send(buffer);
-    }
-
-    if (format === 'pdf') {
-      const buffer = await generateRegistrationsPdf(competition, registrations, options);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${filename}.pdf"`
       );
       return res.status(200).send(buffer);
     }

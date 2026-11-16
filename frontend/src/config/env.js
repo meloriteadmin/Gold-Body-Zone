@@ -24,7 +24,7 @@ export const env = {
   supabaseUrl,
   supabaseAnonKey,
   isSupabaseConfigured: Boolean(supabaseUrl && supabaseAnonKey),
-  portalName: import.meta.env.VITE_PORTAL_NAME?.trim() || 'IRONSTAGE',
+  portalName: import.meta.env.VITE_PORTAL_NAME?.trim() || 'GOLD BODY ZONE',
   contactEmail: import.meta.env.VITE_CONTACT_EMAIL?.trim() || '',
   contactPhone: import.meta.env.VITE_CONTACT_PHONE?.trim() || '',
   contactLocation: import.meta.env.VITE_CONTACT_LOCATION?.trim() || '',

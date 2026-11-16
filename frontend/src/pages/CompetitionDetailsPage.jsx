@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Calendar,
+  CheckCircle,
   Clock,
   CreditCard,
   Loader2,
@@ -12,6 +13,7 @@ import {
   ShieldAlert,
   Trophy,
   Users,
+  X,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../components/common/StatusBadge.jsx';
@@ -38,12 +40,6 @@ import {
 } from '../utils/competitionHelpers.js';
 import { formatDate, formatFee } from '../utils/formatters.js';
 import { verifyReturnedOrder } from '../utils/paymentReturn.js';
-import {
-  getParticipantIdentity,
-  getParticipantRegistration,
-  saveParticipantRegistration,
-} from '../utils/participantSession.js';
-import { supabase } from '../lib/supabase.js';
 
 export function CompetitionDetailsPage() {
   const { id } = useParams();
@@ -57,12 +53,10 @@ export function CompetitionDetailsPage() {
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
 
-  const [sessionRegistration, setSessionRegistration] = useState(null);
-  const [checkoutToken, setCheckoutToken] = useState('');
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [lastReturnOrderId, setLastReturnOrderId] = useState('');
   const [paymentActionError, setPaymentActionError] = useState('');
-  const [retryingPayment, setRetryingPayment] = useState(false);
+  const [paymentSuccessNotice, setPaymentSuccessNotice] = useState('');
 
   const mountedRef = useRef(true);
   const handledOrdersRef = useRef(new Set());
@@ -73,76 +67,6 @@ export function CompetitionDetailsPage() {
       mountedRef.current = false;
     };
   }, []);
-
-  const checkExistingParticipantRegistration = useCallback(
-    async (competitionRecord) => {
-      if (!competitionRecord?.id) return;
-
-      const localSaved = getParticipantRegistration(competitionRecord.id);
-      const identity = getParticipantIdentity() || {};
-
-      let authEmail = null;
-      if (supabase) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          authEmail = sessionData?.session?.user?.email || null;
-        } catch {
-          // Ignore auth session retrieval failure
-        }
-      }
-
-      const queryPayload = {
-        registrationId: localSaved?.id || undefined,
-        email: authEmail || localSaved?.email || identity?.email || undefined,
-        mobileNumber: localSaved?.mobileNumber || identity?.mobileNumber || undefined,
-      };
-
-      if (!queryPayload.registrationId && !queryPayload.email && !queryPayload.mobileNumber) {
-        if (localSaved && !sessionRegistration) {
-          setSessionRegistration(localSaved);
-          if (localSaved.statusToken) {
-            setCheckoutToken(localSaved.statusToken);
-          }
-        }
-        return;
-      }
-
-      try {
-        const res = await apiClient.checkCompetitionRegistration(
-          competitionRecord.id,
-          queryPayload
-        );
-
-        if (!mountedRef.current) return;
-
-        if (res?.registered && res?.registration) {
-          setSessionRegistration(res.registration);
-      saveParticipantRegistration(
-        res.registration.competitionId || competition?.id,
-        res.registration,
-        res.statusToken
-      );
-          if (res.statusToken) {
-            setCheckoutToken(res.statusToken);
-          }
-          saveParticipantRegistration(competitionRecord.id, res.registration, res.statusToken);
-        } else if (localSaved && !sessionRegistration) {
-          setSessionRegistration(localSaved);
-          if (localSaved.statusToken) {
-            setCheckoutToken(localSaved.statusToken);
-          }
-        }
-      } catch {
-        if (mountedRef.current && localSaved && !sessionRegistration) {
-          setSessionRegistration(localSaved);
-          if (localSaved.statusToken) {
-            setCheckoutToken(localSaved.statusToken);
-          }
-        }
-      }
-    },
-    [sessionRegistration]
-  );
 
   const loadDetails = useCallback(
     async (force = false) => {
@@ -156,7 +80,6 @@ export function CompetitionDetailsPage() {
         setCompetition(detailRes.competition || null);
         if (detailRes.competition) {
           setAllCompetitions([detailRes.competition]);
-          checkExistingParticipantRegistration(detailRes.competition);
         }
       } catch (err) {
         if (!mountedRef.current) return;
@@ -168,7 +91,7 @@ export function CompetitionDetailsPage() {
         }
       }
     },
-    [id, checkExistingParticipantRegistration]
+    [id]
   );
 
   useEffect(() => {
@@ -182,6 +105,7 @@ export function CompetitionDetailsPage() {
       setLastReturnOrderId(orderId);
       setVerifyingPayment(true);
       setPaymentActionError('');
+      setPaymentSuccessNotice('');
       try {
         const outcome = await verifyReturnedOrder({
           orderId,
@@ -192,16 +116,10 @@ export function CompetitionDetailsPage() {
 
         if (!mountedRef.current) return;
 
-        if (outcome.registration) {
-          setSessionRegistration(outcome.registration);
-          saveParticipantRegistration(
-            outcome.registration.competitionId || id,
-            outcome.registration,
-            outcome.statusToken
+        if (outcome.registration && outcome.registration.paymentStatus === 'PAID') {
+          setPaymentSuccessNotice(
+            `Payment verified successfully! Registration #${outcome.registration.registrationCode || ''} is confirmed.`
           );
-        }
-        if (outcome.statusToken) {
-          setCheckoutToken(outcome.statusToken);
         }
         if (outcome.status === 'error') {
           setPaymentActionError(outcome.error);
@@ -228,11 +146,6 @@ export function CompetitionDetailsPage() {
     runReturnVerification(orderId);
   }, [searchParams, setSearchParams, runReturnVerification]);
 
-  const activeRegistration = sessionRegistration;
-  const hasActiveRegistration = Boolean(
-    activeRegistration && activeRegistration.registrationStatus !== 'CANCELLED'
-  );
-
   const groupedCategories = useMemo(
     () =>
       groupCategoriesByGender(
@@ -241,54 +154,6 @@ export function CompetitionDetailsPage() {
       ),
     [competition?.categories, competition?.competitionType]
   );
-
-  const handleRetryPayment = async () => {
-    if (!activeRegistration?.id) return;
-    setPaymentActionError('');
-    setRetryingPayment(true);
-    try {
-      const res = await apiClient.retryRegistrationPayment(
-        activeRegistration.id,
-        { statusToken: checkoutToken || undefined }
-      );
-
-      setSessionRegistration(res.registration);
-      saveParticipantRegistration(
-        res.registration.competitionId || competition?.id,
-        res.registration,
-        res.statusToken
-      );
-      if (res.statusToken) {
-        setCheckoutToken(res.statusToken);
-      }
-
-      if (res.alreadyPaid) {
-        return;
-      }
-
-      if (!res.cashfree?.configured || !res.cashfree?.paymentSessionId) {
-        setPaymentActionError(
-          res.cashfree?.message ||
-            'Cashfree gateway credentials are not configured yet.'
-        );
-        return;
-      }
-
-      await launchCashfreeCheckout({
-        mode: res.cashfree.mode,
-        paymentSessionId: res.cashfree.paymentSessionId,
-        orderId: res.cashfree.orderId,
-        statusToken: res.statusToken,
-        registrationId: res.registration.id,
-      });
-    } catch (err) {
-      setPaymentActionError(
-        err.message || 'Failed to initiate payment retry.'
-      );
-    } finally {
-      setRetryingPayment(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -354,46 +219,10 @@ export function CompetitionDetailsPage() {
       !eventPassed
   );
 
-  const isRegisteredAndPaid = Boolean(
-    activeRegistration &&
-      activeRegistration.registrationStatus === 'CONFIRMED' &&
-      activeRegistration.paymentStatus === 'PAID'
-  );
-
-  const isCancelledRegistration =
-    activeRegistration?.registrationStatus === 'CANCELLED';
-
-  const hasPendingPayment = Boolean(
-    activeRegistration &&
-      !isRegisteredAndPaid &&
-      !isCancelledRegistration &&
-      (activeRegistration.paymentStatus === 'PENDING' ||
-        !activeRegistration.paymentStatus)
-  );
-
-  const hasFailedPayment = Boolean(
-    activeRegistration &&
-      !isRegisteredAndPaid &&
-      !isCancelledRegistration &&
-      activeRegistration.paymentStatus === 'FAILED'
-  );
-
   let availabilityLabel = null;
   let availabilityVariant = 'cancelled';
 
-  if (isRegisteredAndPaid) {
-    availabilityLabel = 'ALREADY REGISTERED';
-    availabilityVariant = 'confirmed';
-  } else if (hasPendingPayment) {
-    availabilityLabel = 'PAYMENT PENDING';
-    availabilityVariant = 'pending';
-  } else if (hasFailedPayment) {
-    availabilityLabel = 'PAYMENT FAILED';
-    availabilityVariant = 'failed';
-  } else if (isCancelledRegistration) {
-    availabilityLabel = 'CANCELLED';
-    availabilityVariant = 'cancelled';
-  } else if (competition?.isCompleted) {
+  if (competition?.isCompleted) {
     availabilityLabel = 'Competition Completed';
     availabilityVariant = 'cancelled';
   } else if (compStatus === 'Live') {
@@ -416,12 +245,7 @@ export function CompetitionDetailsPage() {
   const posterSrc = getCompetitionPoster(competition);
 
   const handleCtaClick = () => {
-    if (hasPendingPayment || hasFailedPayment) {
-      handleRetryPayment();
-      return;
-    }
-
-    if (!isRegisteredAndPaid && registrationPermitted) {
+    if (registrationPermitted) {
       setModalOpen(true);
     }
   };
@@ -438,6 +262,23 @@ export function CompetitionDetailsPage() {
           </div>
         )}
 
+        {paymentSuccessNotice && (
+          <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-sm text-emerald-200">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-5 w-5 shrink-0 text-emerald-400" />
+              <span>{paymentSuccessNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaymentSuccessNotice('')}
+              className="rounded-lg p-1 text-emerald-400 hover:bg-emerald-500/20"
+              aria-label="Dismiss notice"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {paymentActionError && (
           <div
             role="alert"
@@ -447,7 +288,7 @@ export function CompetitionDetailsPage() {
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
               <span>{paymentActionError}</span>
             </div>
-            {lastReturnOrderId && !isRegisteredAndPaid && (
+            {lastReturnOrderId && (
               <button
                 type="button"
                 disabled={verifyingPayment}
@@ -498,49 +339,21 @@ export function CompetitionDetailsPage() {
               </p>
             </div>
 
-            {(hasPendingPayment || hasFailedPayment) && (
-              <div className="mt-6 flex items-start gap-3 rounded-2xl border border-[#F15A24]/40 bg-[#F15A24]/10 p-4 text-xs text-white">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
-                <div>
-                  <p className="font-bold text-[#F15A24] uppercase">
-                    Payment Not Completed
-                  </p>
-                  <p className="mt-0.5 text-zinc-300">
-                    Payment not completed. Please retry to confirm your registration.
-                  </p>
-                </div>
-              </div>
-            )}
-
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <button
                 type="button"
                 disabled={
-                  isRegisteredAndPaid ||
                   competition?.isCompleted ||
                   eventPassed ||
-                  (!registrationPermitted && !hasPendingPayment && !hasFailedPayment) ||
-                  retryingPayment
+                  !registrationPermitted
                 }
                 onClick={handleCtaClick}
                 className="inline-flex items-center gap-2.5 rounded-full bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-8 py-4 text-xs font-extrabold tracking-[0.18em] text-white uppercase shadow-[0_14px_38px_-10px_rgba(241,90,36,0.65)] transition-all duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
               >
-                {retryingPayment ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Initiating Payment...</span>
-                  </>
-                ) : isRegisteredAndPaid ? (
-                  <span>Already Registered</span>
-                ) : competition?.isCompleted ? (
+                {competition?.isCompleted ? (
                   <span>Competition Completed</span>
                 ) : eventPassed ? (
                   <span>Competition Concluded</span>
-                ) : (hasPendingPayment || hasFailedPayment) && registrationPermitted ? (
-                  <>
-                    <span>Retry Payment</span>
-                    <RefreshCw className="h-4 w-4" />
-                  </>
                 ) : compStatus === 'Live' && !registrationPermitted ? (
                   <span>Competition Live</span>
                 ) : regStatus === 'Closed' ? (
@@ -555,7 +368,7 @@ export function CompetitionDetailsPage() {
                 )}
               </button>
 
-              {regStatus === 'Closing Soon' && !isRegisteredAndPaid && (
+              {regStatus === 'Closing Soon' && (
                 <div className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300">
                   <Clock className="h-4 w-4 shrink-0 text-amber-400" />
                   <span>
@@ -565,7 +378,7 @@ export function CompetitionDetailsPage() {
                 </div>
               )}
 
-              {deadlinePassed && !isRegisteredAndPaid && (
+              {deadlinePassed && (
                 <p className="inline-flex items-center gap-2 text-xs text-red-300">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   This competition is no longer accepting new entries.
@@ -749,9 +562,10 @@ export function CompetitionDetailsPage() {
         competitions={allCompetitions}
         onClose={() => setModalOpen(false)}
         onRegistrationUpdated={(reg) => {
-          setSessionRegistration(reg);
-          if (reg && (reg.competitionId || competition?.id)) {
-            saveParticipantRegistration(reg.competitionId || competition.id, reg);
+          if (reg?.paymentStatus === 'PAID') {
+            setPaymentSuccessNotice(
+              `Payment verified successfully! Registration #${reg.registrationCode || ''} is confirmed.`
+            );
           }
         }}
       />

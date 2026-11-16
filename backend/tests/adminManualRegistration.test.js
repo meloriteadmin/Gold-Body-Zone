@@ -569,7 +569,7 @@ describe('Admin Manual Registration & Offline Payments', () => {
     assert.equal(resManual.payload.registrations[0].isManual, true);
   });
 
-  it('exports registrations to CSV, Excel, and PDF', async () => {
+  it('exports registrations to CSV and Excel (Row 1 headings, no metadata banners, exactly N data rows)', async () => {
     function createExportMockRes() {
       return {
         headers: {},
@@ -589,28 +589,103 @@ describe('Admin Manual Registration & Offline Payments', () => {
       };
     }
 
-    // CSV
+    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
+
+    // Populate mock registrations with 2 records
+    mockRegistrations = [
+      {
+        id: 'reg-export-1',
+        participantName: 'Vikas Patil',
+        registrationCode: 'GBZ-BB-001',
+        mobileNumber: '9876543210',
+        email: 'vikas@example.com',
+        gender: 'MALE',
+        competitionId: 'comp-bodybuilding',
+        competition: { name: 'State Bodybuilding', registrationFee: 500 },
+        category: { name: '65-75 kg', gender: 'MALE' },
+        groupName: 'Group A',
+        isManual: true,
+        paymentStatus: 'PAID',
+        registrationStatus: 'CONFIRMED',
+        createdAt: new Date('2026-11-16T10:00:00Z'),
+        payment: { amount: 500, verificationSource: 'ADMIN_MANUAL' },
+      },
+      {
+        id: 'reg-export-2',
+        participantName: 'Rahul Sharma',
+        registrationCode: 'GBZ-BB-002',
+        mobileNumber: '9123456780',
+        email: 'rahul@example.com',
+        gender: 'MALE',
+        competitionId: 'comp-bodybuilding',
+        competition: { name: 'State Bodybuilding', registrationFee: 500 },
+        category: { name: '75-85 kg', gender: 'MALE' },
+        groupName: 'Group B',
+        isManual: false,
+        paymentStatus: 'PAID',
+        registrationStatus: 'CONFIRMED',
+        createdAt: new Date('2026-11-16T11:00:00Z'),
+        payment: { amount: 500, cashfreeOrderId: 'CF-123' },
+      },
+    ];
+
+    const expectedHeaders = [
+      'Sr No',
+      'Participant Name',
+      'Registration ID',
+      'Phone Number',
+      'Email',
+      'Gender',
+      'Competition Name',
+      'Category',
+      'Group',
+      'Registration Date',
+      'Registration Source',
+      'Payment Method',
+      'Payment Status',
+      'Registration Status',
+      'Fee (INR)',
+    ];
+
+    // CSV with 2 records -> exactly 1 header line + 2 data lines = 3 lines
     const resCsv = createExportMockRes();
     await exportRegistrations({ query: { competitionId: 'comp-bodybuilding', format: 'csv', source: 'ALL' } }, resCsv, () => {});
     assert.equal(resCsv.statusCode, 200);
     assert.ok(resCsv.headers['Content-Disposition'].includes('.csv'));
-    assert.ok(resCsv.body.toString().includes('IRONSTAGE COMPETITION MANAGEMENT SYSTEM'));
-    assert.ok(resCsv.body.toString().includes('State Bodybuilding'));
+    const csvLines = resCsv.body.toString('utf-8').trim().split('\r\n');
+    assert.equal(csvLines.length, 3);
+    assert.equal(csvLines[0], expectedHeaders.join(','));
+    assert.ok(csvLines[1].includes('Vikas Patil'));
+    assert.ok(csvLines[1].includes('9876543210'));
+    assert.ok(csvLines[2].includes('Rahul Sharma'));
 
-    // Excel (.xlsx)
+    // Excel (.xlsx) with 2 records -> exactly 1 header row + 2 data rows = 3 rows
     const resXlsx = createExportMockRes();
     await exportRegistrations({ query: { competitionId: 'comp-bodybuilding', format: 'xlsx', source: 'ALL' } }, resXlsx, () => {});
     assert.equal(resXlsx.statusCode, 200);
     assert.ok(resXlsx.headers['Content-Disposition'].includes('.xlsx'));
     assert.ok(Buffer.isBuffer(resXlsx.body));
-    assert.ok(resXlsx.body.length > 500);
+    const wb = XLSX.read(resXlsx.body, { type: 'buffer' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const excelRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    assert.equal(excelRows.length, 3);
+    assert.deepEqual(excelRows[0], expectedHeaders);
+    assert.equal(excelRows[1][1], 'Vikas Patil');
+    assert.equal(excelRows[1][3], '9876543210');
+    assert.equal(excelRows[2][1], 'Rahul Sharma');
 
-    // PDF (.pdf)
+    // PDF (.pdf) is rejected with 400
+    let pdfErr = null;
     const resPdf = createExportMockRes();
-    await exportRegistrations({ query: { competitionId: 'comp-bodybuilding', format: 'pdf', source: 'ALL' } }, resPdf, () => {});
-    assert.equal(resPdf.statusCode, 200);
-    assert.ok(resPdf.headers['Content-Disposition'].includes('.pdf'));
-    assert.ok(Buffer.isBuffer(resPdf.body));
-    assert.ok(resPdf.body.length > 500);
+    await exportRegistrations(
+      { query: { competitionId: 'comp-bodybuilding', format: 'pdf', source: 'ALL' } },
+      resPdf,
+      (err) => {
+        pdfErr = err;
+      }
+    );
+    assert.ok(pdfErr);
+    assert.equal(pdfErr.statusCode, 400);
+    assert.ok(pdfErr.message.includes('Expected xlsx or csv'));
   });
 });
