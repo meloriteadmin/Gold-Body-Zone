@@ -49,15 +49,27 @@ export function HistoryPage() {
       }
 
       // Custom Date Range filter
-      if (comp.eventDate) {
-        const eventTime = new Date(comp.eventDate).getTime();
+      if (startDate || endDate) {
+        const compDateRaw = comp.eventDate || comp.completedAt;
+        if (!compDateRaw) return false;
+
+        const target = new Date(compDateRaw);
+        if (Number.isNaN(target.getTime())) return false;
+
+        const localY = target.getFullYear();
+        const localM = String(target.getMonth() + 1).padStart(2, '0');
+        const localD = String(target.getDate()).padStart(2, '0');
+        const localYMD = `${localY}-${localM}-${localD}`;
+        const utcYMD = target.toISOString().slice(0, 10);
+
         if (startDate) {
-          const start = new Date(startDate).getTime();
-          if (eventTime < start) return false;
+          const matchesStart = localYMD >= startDate || utcYMD >= startDate;
+          if (!matchesStart) return false;
         }
+
         if (endDate) {
-          const end = new Date(endDate).setHours(23, 59, 59, 999);
-          if (eventTime > end) return false;
+          const matchesEnd = localYMD <= endDate || utcYMD <= endDate;
+          if (!matchesEnd) return false;
         }
       }
 

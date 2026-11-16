@@ -5,8 +5,10 @@ import {
   uploadImageToBucket,
 } from '../services/storage.service.js';
 import {
+  isPastEvent,
   makeUniqueSlug,
   normalizeCategoryInput,
+  parseOptionalDate,
   validateCompetitionPayload,
 } from '../utils/competitionValidation.js';
 import { HttpError } from '../utils/httpError.js';
@@ -165,11 +167,18 @@ export async function listCompetitions(req, res, next) {
         }
       }
       if (req.query.startDate || req.query.endDate) {
-        where.eventDate = {
-          ...(where.eventDate || {}),
-          ...(req.query.startDate ? { gte: new Date(req.query.startDate) } : {}),
-          ...(req.query.endDate ? { lte: new Date(req.query.endDate) } : {}),
-        };
+        const dateConditions = { ...(where.eventDate || {}) };
+        if (req.query.startDate) {
+          const start = new Date(req.query.startDate);
+          start.setUTCHours(0, 0, 0, 0);
+          dateConditions.gte = start;
+        }
+        if (req.query.endDate) {
+          const end = new Date(req.query.endDate);
+          end.setUTCHours(23, 59, 59, 999);
+          dateConditions.lte = end;
+        }
+        where.eventDate = dateConditions;
       }
     } else if (req.query.history === 'false') {
       where.isCompleted = false;
@@ -232,15 +241,65 @@ export async function setRegistrationClosingStatus(req, res, next) {
     }
 
     const isClosed = Boolean(req.body.isRegistrationClosed);
+    let newRegistrationDeadline = undefined;
 
-    if (!isClosed && existing.registrationDeadline) {
-      const deadline = new Date(existing.registrationDeadline);
-      deadline.setUTCHours(23, 59, 59, 999);
-      if (new Date() > deadline) {
+    if (!isClosed) {
+      if (existing.isCompleted) {
         throw new HttpError(
           400,
-          'Cannot reopen registrations because the registration deadline has already passed. Please update the deadline in Settings first.'
+          'Cannot reopen registrations for a completed competition.'
         );
+      }
+
+      if (isPastEvent(existing.eventDate)) {
+        throw new HttpError(
+          400,
+          'Cannot reopen registrations for an event that has already passed.'
+        );
+      }
+
+      if (
+        req.body.registrationDeadline !== undefined &&
+        req.body.registrationDeadline !== null &&
+        req.body.registrationDeadline !== ''
+      ) {
+        const parsed = parseOptionalDate(
+          req.body.registrationDeadline,
+          'Registration deadline'
+        );
+        if (!parsed) {
+          throw new HttpError(400, 'Invalid registration deadline date.');
+        }
+        const deadlineDate = new Date(parsed);
+        deadlineDate.setUTCHours(23, 59, 59, 999);
+        if (new Date() > deadlineDate) {
+          throw new HttpError(
+            400,
+            'Registration deadline must be a valid future date.'
+          );
+        }
+        if (existing.eventDate) {
+          const eventDate = new Date(existing.eventDate);
+          eventDate.setUTCHours(23, 59, 59, 999);
+          if (deadlineDate > eventDate) {
+            throw new HttpError(
+              400,
+              'Registration deadline cannot be after the competition event date.'
+            );
+          }
+        }
+        newRegistrationDeadline = parsed;
+      }
+
+      if (!newRegistrationDeadline && existing.registrationDeadline) {
+        const deadline = new Date(existing.registrationDeadline);
+        deadline.setUTCHours(23, 59, 59, 999);
+        if (new Date() > deadline) {
+          throw new HttpError(
+            400,
+            'Cannot reopen registrations because the registration deadline has already passed. Please update the deadline to a valid future date first.'
+          );
+        }
       }
     }
 
@@ -249,6 +308,9 @@ export async function setRegistrationClosingStatus(req, res, next) {
       data: {
         isRegistrationClosed: isClosed,
         registrationClosedAt: isClosed ? new Date() : null,
+        ...(newRegistrationDeadline !== undefined
+          ? { registrationDeadline: newRegistrationDeadline }
+          : {}),
       },
       include: ADMIN_COMPETITION_INCLUDE,
     });
@@ -284,6 +346,8 @@ export async function createCompetition(req, res, next) {
     const created = await prisma.competition.create({
       data: {
         ...data,
+        isPublished: false,
+        publishedAt: null,
         slug: makeUniqueSlug(data.name),
         isDefault: false,
         categories:
@@ -709,6 +773,10 @@ export async function setCompetitionPublishStatus(req, res, next) {
       req.body.isPublished !== undefined
         ? Boolean(req.body.isPublished)
         : !existing.isPublished;
+
+    if (nextPublished && existing.isCompleted) {
+      throw new HttpError(400, 'Cannot publish a completed competition.');
+    }
 
     const updated = await prisma.competition.update({
       where: { id: existing.id },

@@ -332,6 +332,17 @@ export async function createPublicRegistration(req, res, next) {
       );
     }
 
+    if (competition.eventDate) {
+      const eventDate = new Date(competition.eventDate);
+      eventDate.setUTCHours(23, 59, 59, 999);
+      if (new Date() > eventDate) {
+        throw new HttpError(
+          400,
+          'This competition has already taken place. Registrations are closed.'
+        );
+      }
+    }
+
     if (competition.isRegistrationClosed) {
       throw new HttpError(
         400,
@@ -421,7 +432,7 @@ export async function createPublicRegistration(req, res, next) {
     }
 
     // Check existing record before creating a new row so retries never duplicate registrations.
-    const existing = await prisma.registration.findUnique({
+    let existing = await prisma.registration.findUnique({
       where: {
         competitionId_email: {
           competitionId: competition.id,
@@ -430,6 +441,16 @@ export async function createPublicRegistration(req, res, next) {
       },
       include: PUBLIC_REG_INCLUDE,
     });
+
+    if (!existing && input.mobileNumber) {
+      existing = await prisma.registration.findFirst({
+        where: {
+          competitionId: competition.id,
+          mobileNumber: input.mobileNumber,
+        },
+        include: PUBLIC_REG_INCLUDE,
+      });
+    }
 
     if (existing) {
       if (
@@ -580,6 +601,35 @@ export async function retryRegistrationPayment(req, res, next) {
         400,
         'This competition has concluded. Payments are no longer accepted.'
       );
+    }
+
+    if (registration.competition?.eventDate) {
+      const eventDate = new Date(registration.competition.eventDate);
+      eventDate.setUTCHours(23, 59, 59, 999);
+      if (new Date() > eventDate) {
+        throw new HttpError(
+          400,
+          'This competition has already taken place. Payments are no longer accepted.'
+        );
+      }
+    }
+
+    if (registration.competition?.isRegistrationClosed) {
+      throw new HttpError(
+        400,
+        'Registrations for this competition have been closed. Payments are no longer accepted.'
+      );
+    }
+
+    if (registration.competition?.registrationDeadline) {
+      const deadline = new Date(registration.competition.registrationDeadline);
+      deadline.setUTCHours(23, 59, 59, 999);
+      if (new Date() > deadline) {
+        throw new HttpError(
+          400,
+          'Registration deadline has passed. Payments are no longer accepted.'
+        );
+      }
     }
 
     const bodyToken = req.body?.statusToken;
@@ -741,6 +791,109 @@ export async function verifyPublicOrderPayment(req, res, next) {
       orderStatus: cfState.orderStatus,
       registration: serializePublicRegistration(updatedRegistration),
       statusToken: createCheckoutStatusToken(updatedRegistration.id, orderId),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function parseJwtClaimsSafely(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const json = Buffer.from(parts[1], 'base64url').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export async function checkCompetitionRegistration(req, res, next) {
+  try {
+    if (!env.isDatabaseConfigured) {
+      throw new HttpError(503, 'Database is not configured yet.');
+    }
+
+    const prisma = getPrismaClient();
+    const lookup = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+
+    const competition = await prisma.competition.findFirst({
+      where: {
+        isPublished: true,
+        OR: [
+          { id: lookup },
+          { slug: lookup },
+          { slug: lookup.toLowerCase() },
+        ],
+      },
+      select: { id: true, name: true, isPublished: true },
+    });
+
+    if (!competition) {
+      throw new HttpError(404, 'Competition not found.');
+    }
+
+    let authEmail = null;
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const claims = parseJwtClaimsSafely(authHeader.slice(7).trim());
+      if (claims?.email) {
+        authEmail = claims.email.trim().toLowerCase();
+      }
+    }
+
+    const email = (req.body?.email || req.query.email || authEmail || '')
+      .trim()
+      .toLowerCase();
+    const mobileNumber = String(req.body?.mobileNumber || req.query.mobileNumber || '').trim();
+    const registrationId = String(req.body?.registrationId || req.query.registrationId || '').trim();
+
+    if (!email && !mobileNumber && !registrationId) {
+      return res.status(200).json({
+        registered: false,
+        registration: null,
+      });
+    }
+
+    const orConditions = [];
+    if (registrationId) orConditions.push({ id: registrationId });
+    if (email) orConditions.push({ email });
+    if (mobileNumber) orConditions.push({ mobileNumber });
+
+    const registration = await prisma.registration.findFirst({
+      where: {
+        competitionId: competition.id,
+        OR: orConditions,
+        registrationStatus: { not: 'CANCELLED' },
+      },
+      include: PUBLIC_REG_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!registration) {
+      return res.status(200).json({
+        registered: false,
+        registration: null,
+      });
+    }
+
+    const isPaid =
+      registration.paymentStatus === 'PAID' &&
+      registration.registrationStatus === 'CONFIRMED';
+
+    const canRetryPayment = !isPaid && registration.registrationStatus !== 'CANCELLED';
+
+    const statusToken = createCheckoutStatusToken(
+      registration.id,
+      registration.payment?.cashfreeOrderId || registration.id
+    );
+
+    return res.status(200).json({
+      registered: true,
+      isPaid,
+      canRetryPayment,
+      registration: serializePublicRegistration(registration),
+      statusToken,
     });
   } catch (err) {
     next(err);

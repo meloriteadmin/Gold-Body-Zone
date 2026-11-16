@@ -160,6 +160,12 @@ export const apiClient = {
   },
   submitPublicRegistration: (payload, token) =>
     request('/public/registrations', { method: 'POST', token, body: payload }),
+  checkCompetitionRegistration: (competitionId, payload = {}, token) =>
+    request(`/public/competitions/${encodeURIComponent(competitionId)}/check-registration`, {
+      method: 'POST',
+      token,
+      body: payload,
+    }),
   retryRegistrationPayment: (registrationId, payload = {}, token) =>
     request(`/public/registrations/${encodeURIComponent(registrationId)}/retry-payment`, {
       method: 'POST',
@@ -261,11 +267,11 @@ export const apiClient = {
     apiClient.invalidateCompetitionsCache();
     return res;
   },
-  setCompetitionRegistrationClosing: async (token, id, isRegistrationClosed) => {
+  setCompetitionRegistrationClosing: async (token, id, isRegistrationClosed, extra = {}) => {
     const res = await request(`/admin/competitions/${id}/registration-status`, {
       method: 'PATCH',
       token,
-      body: { isRegistrationClosed },
+      body: { isRegistrationClosed, ...extra },
     });
     apiClient.invalidateCompetitionsCache();
     return res;

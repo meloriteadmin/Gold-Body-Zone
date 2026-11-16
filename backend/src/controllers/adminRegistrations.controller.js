@@ -322,6 +322,17 @@ export async function createManualRegistration(req, res, next) {
       );
     }
 
+    if (competition.eventDate) {
+      const eventDate = new Date(competition.eventDate);
+      eventDate.setUTCHours(23, 59, 59, 999);
+      if (new Date() > eventDate) {
+        throw new HttpError(
+          400,
+          'Cannot create manual registration for a competition that has already taken place.'
+        );
+      }
+    }
+
     const VALID_MANUAL_PAYMENT_METHODS = new Set([
       'CASH',
       'UPI',

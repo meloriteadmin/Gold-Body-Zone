@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  checkCompetitionRegistration,
   createPublicRegistration,
   getPublishedCompetition,
   listPublishedCompetitions,
@@ -11,6 +12,8 @@ const router = Router();
 
 router.get('/competitions', listPublishedCompetitions);
 router.get('/competitions/:id', getPublishedCompetition);
+router.get('/competitions/:id/check-registration', checkCompetitionRegistration);
+router.post('/competitions/:id/check-registration', checkCompetitionRegistration);
 router.post('/registrations', createPublicRegistration);
 router.post(
   '/registrations/:id/retry-payment',

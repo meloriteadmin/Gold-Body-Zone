@@ -21,7 +21,6 @@ import {
   Pencil,
   RefreshCw,
   Search,
-  Trash2,
   Upload,
   Users,
 } from 'lucide-react';
@@ -36,6 +35,7 @@ import {
   getCompetitionStatus,
   getRegistrationStatus,
   isDeadlineClosed,
+  isPastEvent,
 } from '../utils/competitionHelpers.js';
 import { formatDate, formatDateTime, formatFee } from '../utils/formatters.js';
 
@@ -55,9 +55,9 @@ export function AdminCompetitionDetailPage() {
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [deletingCompetition, setDeletingCompetition] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
+  const [reopenDeadlineModalOpen, setReopenDeadlineModalOpen] = useState(false);
+  const [newReopenDeadline, setNewReopenDeadline] = useState('');
+  const [reopenDeadlineError, setReopenDeadlineError] = useState('');
 
   // Direct Photo Upload
   const directPhotoInputRef = useRef(null);
@@ -137,22 +137,6 @@ export function AdminCompetitionDetailPage() {
     await loadCompetition();
   };
 
-  const handleDeleteCompetition = async () => {
-    setDeletingCompetition(true);
-    setError('');
-    setDeleteError('');
-    try {
-      await apiClient.deleteCompetition(accessToken, competition.id);
-      navigate('/admin/competitions');
-    } catch (err) {
-      const msg = err.message || 'Failed to delete competition.';
-      setError(msg);
-      setDeleteError(msg);
-    } finally {
-      setDeletingCompetition(false);
-    }
-  };
-
   const handleTogglePublish = async () => {
     if (!competition) return;
     const nextPublished = !competition.isPublished;
@@ -178,25 +162,100 @@ export function AdminCompetitionDetailPage() {
 
   const handleToggleRegistrationClosing = async () => {
     if (!competition) return;
-    const nextClosed = !competition.isRegistrationClosed;
+    const isCurrentlyClosed = competition.isRegistrationClosed;
+
+    if (isCurrentlyClosed) {
+      if (eventPassed) {
+        setError('Cannot reopen registrations because the event date has already passed.');
+        return;
+      }
+
+      if (deadlinePassed) {
+        setReopenDeadlineError('');
+        setNewReopenDeadline('');
+        setReopenDeadlineModalOpen(true);
+        return;
+      }
+
+      setActionLoading(true);
+      setError('');
+      try {
+        const res = await apiClient.setCompetitionRegistrationClosing(
+          accessToken,
+          competition.id,
+          false
+        );
+        setCompetition((prev) => ({ ...prev, ...res.competition }));
+        setSuccessMsg('Registrations have been successfully reopened.');
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } catch (err) {
+        setError(err.message || 'Failed to reopen registrations.');
+      } finally {
+        setActionLoading(false);
+      }
+    } else {
+      setActionLoading(true);
+      setError('');
+      try {
+        const res = await apiClient.setCompetitionRegistrationClosing(
+          accessToken,
+          competition.id,
+          true
+        );
+        setCompetition((prev) => ({ ...prev, ...res.competition }));
+        setSuccessMsg('Registrations have been manually closed.');
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } catch (err) {
+        setError(err.message || 'Failed to close registrations.');
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  };
+
+  const handleConfirmReopenWithDeadline = async () => {
+    if (!competition || !newReopenDeadline) {
+      setReopenDeadlineError('Please select a valid future date.');
+      return;
+    }
+
+    const selectedDate = new Date(newReopenDeadline);
+    selectedDate.setHours(23, 59, 59, 999);
+    if (new Date() > selectedDate) {
+      setReopenDeadlineError('Registration deadline must be a valid future date.');
+      return;
+    }
+
+    if (competition.eventDate) {
+      const eventDate = new Date(competition.eventDate);
+      eventDate.setHours(23, 59, 59, 999);
+      if (selectedDate > eventDate) {
+        setReopenDeadlineError(
+          `Registration deadline cannot be after the competition date (${formatDate(competition.eventDate)}).`
+        );
+        return;
+      }
+    }
 
     setActionLoading(true);
-    setError('');
+    setReopenDeadlineError('');
     try {
       const res = await apiClient.setCompetitionRegistrationClosing(
         accessToken,
         competition.id,
-        nextClosed
+        false,
+        { registrationDeadline: newReopenDeadline }
       );
       setCompetition((prev) => ({ ...prev, ...res.competition }));
       setSuccessMsg(
-        nextClosed
-          ? 'Registrations have been manually closed.'
-          : 'Registrations have been successfully reopened.'
+        'Registration deadline extended and registrations successfully reopened.'
       );
+      setReopenDeadlineModalOpen(false);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setError(err.message || 'Failed to update registration status.');
+      setReopenDeadlineError(
+        err.message || 'Failed to update deadline and reopen registrations.'
+      );
     } finally {
       setActionLoading(false);
     }
@@ -288,6 +347,10 @@ export function AdminCompetitionDetailPage() {
       Boolean(
         competition && isDeadlineClosed(competition.registrationDeadline)
       ),
+    [competition]
+  );
+  const eventPassed = useMemo(
+    () => Boolean(competition && isPastEvent(competition.eventDate)),
     [competition]
   );
 
@@ -451,6 +514,103 @@ export function AdminCompetitionDetailPage() {
         />
       )}
 
+      {/* Extend Deadline & Reopen Registrations Modal */}
+      {reopenDeadlineModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1a1a] p-6 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                <LockOpen className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-bold text-white uppercase">
+                  Reopen Registrations
+                </h3>
+                <p className="text-xs text-[#A1A1AA]">
+                  Update registration deadline
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs text-zinc-300">
+              The previous registration deadline{' '}
+              {competition.registrationDeadline && (
+                <span className="font-semibold text-white">
+                  ({formatDate(competition.registrationDeadline)})
+                </span>
+              )}{' '}
+              has passed. To reopen registrations, please select a new future deadline date.
+            </p>
+
+            {reopenDeadlineError && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{reopenDeadlineError}</span>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                New Registration Deadline *
+              </label>
+              <input
+                type="date"
+                min={new Date().toISOString().split('T')[0]}
+                max={
+                  competition.eventDate
+                    ? new Date(competition.eventDate).toISOString().split('T')[0]
+                    : undefined
+                }
+                value={newReopenDeadline}
+                onChange={(e) => {
+                  setNewReopenDeadline(e.target.value);
+                  setReopenDeadlineError('');
+                }}
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#222222] px-3.5 py-2.5 text-sm text-white focus:border-[#F15A24] focus:outline-none"
+              />
+              {competition.eventDate && (
+                <p className="mt-1 text-[11px] text-[#A1A1AA]">
+                  Must be on or before the competition date (
+                  {formatDate(competition.eventDate)}).
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReopenDeadlineModalOpen(false);
+                  setReopenDeadlineError('');
+                }}
+                disabled={actionLoading}
+                className="rounded-xl border border-white/10 bg-[#222222] px-4 py-2 text-xs font-semibold text-zinc-300 transition-colors hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReopenWithDeadline}
+                disabled={actionLoading || !newReopenDeadline}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-500/20 transition-all hover:brightness-110 disabled:opacity-50"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Reopening...</span>
+                  </>
+                ) : (
+                  <>
+                    <LockOpen className="h-3.5 w-3.5" />
+                    <span>Update & Reopen</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Navigation & Actions Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <button
@@ -509,11 +669,13 @@ export function AdminCompetitionDetailPage() {
               <button
                 type="button"
                 onClick={handleToggleRegistrationClosing}
-                disabled={actionLoading || deadlinePassed}
+                disabled={actionLoading || eventPassed}
                 title={
-                  deadlinePassed
-                    ? 'Registration deadline has passed.'
-                    : 'Reopen registrations for participants'
+                  eventPassed
+                    ? 'Cannot reopen registrations because the event date has already passed.'
+                    : deadlinePassed
+                      ? 'Registration deadline has passed. Click to extend deadline and reopen.'
+                      : 'Reopen registrations for participants'
                 }
                 className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -570,39 +732,6 @@ export function AdminCompetitionDetailPage() {
               ? 'Mark as In-Progress'
               : 'Mark as Completed'}
           </button>
-
-          {/* Delete Competition - Available only when not completed */}
-          {!competition.isCompleted && (
-            <div className="relative group/detail-delete">
-              <button
-                type="button"
-                onClick={() => {
-                  if (stats.total > 0) return;
-                  setDeleteError('');
-                  setConfirmDeleteOpen(true);
-                }}
-                disabled={actionLoading || stats.total > 0}
-                title={
-                  stats.total > 0
-                    ? 'This competition cannot be deleted because participant registrations exist.'
-                    : 'Delete competition'
-                }
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
-                  stats.total > 0
-                    ? 'cursor-not-allowed border-white/5 bg-white/5 text-zinc-500 opacity-50'
-                    : 'border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20'
-                }`}
-              >
-                <Trash2 className="h-3.5 w-3.5 text-red-400" />
-                Delete
-              </button>
-              {stats.total > 0 && (
-                <div className="pointer-events-none absolute right-0 top-full mt-1.5 hidden w-64 rounded-lg border border-amber-500/30 bg-[#171717] p-2 text-[10px] leading-tight text-amber-200 shadow-xl group-hover/detail-delete:block z-30">
-                  This competition cannot be deleted because participant registrations exist.
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -1192,110 +1321,6 @@ export function AdminCompetitionDetailPage() {
         onClose={() => setModalOpen(false)}
         onSave={handleSaveCompetition}
       />
-
-      {/* Delete Confirmation Modal */}
-      {confirmDeleteOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-dialog-title"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#171717] p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-red-500/10 p-2.5">
-                {stats.total > 0 ? (
-                  <AlertCircle className="h-6 w-6 text-amber-400" />
-                ) : (
-                  <Trash2 className="h-6 w-6 text-red-400" />
-                )}
-              </div>
-              <div>
-                <h3
-                  id="delete-dialog-title"
-                  className="font-display text-lg font-bold text-white uppercase"
-                >
-                  {stats.total > 0 ? 'Deletion Restricted' : 'Delete Competition?'}
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  {stats.total > 0
-                    ? 'Competitions with participant records cannot be deleted'
-                    : 'This action cannot be undone.'}
-                </p>
-              </div>
-            </div>
-
-            {deleteError && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
-                {deleteError}
-              </div>
-            )}
-
-            {stats.total > 0 ? (
-              <div className="space-y-3 text-xs text-[#A1A1AA] leading-relaxed">
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-amber-200">
-                  <p className="font-semibold text-amber-300">
-                    This competition cannot be deleted because participant registrations exist.
-                  </p>
-                  <p className="mt-1 text-[11px] text-amber-200/80">
-                    This competition contains <strong className="text-white">{stats.total}</strong> registered participant record{stats.total === 1 ? '' : 's'}. To preserve athlete registrations, category allocations, and payment audit history, competitions with registrations cannot be permanently deleted. Use cancellation or mark as Completed to archive it.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-[#A1A1AA] leading-relaxed">
-                Are you sure you want to permanently delete <strong className="text-white">"{competition.name}"</strong>?
-                This competition has 0 registrations and will be permanently removed along with all its categories and event photos.
-              </p>
-            )}
-
-            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmDeleteOpen(false);
-                  setDeleteError('');
-                }}
-                disabled={deletingCompetition || actionLoading}
-                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white"
-              >
-                {stats.total > 0 ? 'Close' : 'Cancel'}
-              </button>
-
-              {stats.total > 0 ? (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setConfirmDeleteOpen(false);
-                    await handleToggleCompletion();
-                  }}
-                  disabled={actionLoading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#F15A24] px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-[#e04f1b]"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Mark as Completed</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleDeleteCompetition}
-                  disabled={deletingCompetition}
-                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-red-500 disabled:opacity-50"
-                >
-                  {deletingCompetition ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Deleting...</span>
-                    </>
-                  ) : (
-                    <span>Delete Competition</span>
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

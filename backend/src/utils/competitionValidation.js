@@ -27,11 +27,20 @@ export function computeCompetitionStatus(competition) {
   return 'PUBLISHED';
 }
 
+export function isPastEvent(eventDateValue) {
+  if (!eventDateValue) return false;
+  const eventDay = new Date(eventDateValue);
+  if (Number.isNaN(eventDay.getTime())) return false;
+  eventDay.setUTCHours(23, 59, 59, 999);
+  return new Date() > eventDay;
+}
+
 export function computeRegistrationStatus(competition) {
   if (!competition) return 'CLOSED';
   if (competition.isCompleted) return 'CLOSED';
   if (!competition.isPublished) return 'CLOSED';
   if (competition.isRegistrationClosed) return 'CLOSED';
+  if (isPastEvent(competition.eventDate)) return 'CLOSED';
 
   if (competition.registrationDeadline) {
     const deadline = new Date(competition.registrationDeadline);
@@ -60,7 +69,7 @@ export function makeUniqueSlug(name) {
   return `${base}-${suffix}`;
 }
 
-function parseOptionalDate(value, fieldName) {
+export function parseOptionalDate(value, fieldName) {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
   const parsed = new Date(value);
@@ -219,19 +228,29 @@ export function validateCompetitionPayload(body, { isUpdate = false } = {}) {
   );
   if (maxParticipants !== undefined) data.maxParticipants = maxParticipants;
 
-  if (body.isPublished !== undefined) {
-    data.isPublished = Boolean(body.isPublished);
-    data.publishedAt = data.isPublished ? new Date() : null;
-  }
+  if (!isUpdate) {
+    // New competitions must always be saved as Draft. Admin must explicitly publish them.
+    data.isPublished = false;
+    data.publishedAt = null;
+    data.isCompleted = false;
+    data.completedAt = null;
+    data.isRegistrationClosed = false;
+    data.registrationClosedAt = null;
+  } else {
+    if (body.isPublished !== undefined) {
+      data.isPublished = Boolean(body.isPublished);
+      data.publishedAt = data.isPublished ? new Date() : null;
+    }
 
-  if (body.isCompleted !== undefined) {
-    data.isCompleted = Boolean(body.isCompleted);
-    data.completedAt = data.isCompleted ? new Date() : null;
-  }
+    if (body.isCompleted !== undefined) {
+      data.isCompleted = Boolean(body.isCompleted);
+      data.completedAt = data.isCompleted ? new Date() : null;
+    }
 
-  if (body.isRegistrationClosed !== undefined) {
-    data.isRegistrationClosed = Boolean(body.isRegistrationClosed);
-    data.registrationClosedAt = data.isRegistrationClosed ? new Date() : null;
+    if (body.isRegistrationClosed !== undefined) {
+      data.isRegistrationClosed = Boolean(body.isRegistrationClosed);
+      data.registrationClosedAt = data.isRegistrationClosed ? new Date() : null;
+    }
   }
 
   let categories;

@@ -24,6 +24,11 @@ import {
   isDeadlineClosed,
 } from '../../utils/competitionHelpers.js';
 import { formatFee } from '../../utils/formatters.js';
+import {
+  getParticipantIdentity,
+  saveParticipantIdentity,
+  saveParticipantRegistration,
+} from '../../utils/participantSession.js';
 import { StatusBadge } from '../common/StatusBadge.jsx';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -88,6 +93,15 @@ export function PublicRegistrationModal({
 
   // Holds { registration, cashfree, statusToken, reusedPendingRegistration }
   const [paymentResult, setPaymentResult] = useState(null);
+
+  useEffect(() => {
+    const saved = getParticipantIdentity();
+    if (saved) {
+      if (saved.participantName && !participantName) setParticipantName(saved.participantName);
+      if (saved.email && !email) setEmail(saved.email);
+      if (saved.mobileNumber && !mobileNumber) setMobileNumber(saved.mobileNumber);
+    }
+  }, []);
 
   const openCompetitions = useMemo(() => {
     const source =
@@ -342,6 +356,11 @@ export function PublicRegistrationModal({
         statusToken: res.statusToken,
         registrationId: res.registration.id,
       });
+      saveParticipantRegistration(
+        res.registration.competitionId || activeCompetition?.id,
+        res.registration,
+        res.statusToken
+      );
     }
 
     if (onRegistrationUpdated) {
@@ -425,7 +444,17 @@ export function PublicRegistrationModal({
       const res = await apiClient.submitPublicRegistration(payload);
       await runCashfreeOrStoreResult(res);
     } catch (err) {
-      setFormError(err.message || 'Failed to submit registration.');
+      const msg = err.message || 'Failed to submit registration.';
+      setFormError(msg);
+      if (err.status === 409 && /already registered/i.test(msg)) {
+        if (onRegistrationUpdated && activeCompetition?.id) {
+          onRegistrationUpdated({
+            competitionId: activeCompetition.id,
+            registrationStatus: 'CONFIRMED',
+            paymentStatus: 'PAID',
+          });
+        }
+      }
     } finally {
       setSubmitting(false);
     }

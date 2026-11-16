@@ -26,11 +26,20 @@ export function getCompetitionStatus(competition) {
   return 'Published';
 }
 
+export function isPastEvent(eventDateValue) {
+  if (!eventDateValue) return false;
+  const eventDay = new Date(eventDateValue);
+  if (Number.isNaN(eventDay.getTime())) return false;
+  eventDay.setHours(23, 59, 59, 999);
+  return new Date() > eventDay;
+}
+
 export function getRegistrationStatus(competition) {
   if (!competition) return 'Closed';
   if (competition.isCompleted) return 'Closed';
   if (!competition.isPublished) return 'Closed';
   if (competition.isRegistrationClosed) return 'Closed';
+  if (isPastEvent(competition.eventDate)) return 'Closed';
 
   if (competition.registrationDeadline) {
     const deadline = new Date(competition.registrationDeadline);

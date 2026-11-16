@@ -33,10 +33,17 @@ import {
   getRegistrationStatus,
   groupCategoriesByGender,
   isDeadlineClosed,
+  isPastEvent,
   isRegistrationPermitted,
 } from '../utils/competitionHelpers.js';
 import { formatDate, formatFee } from '../utils/formatters.js';
 import { verifyReturnedOrder } from '../utils/paymentReturn.js';
+import {
+  getParticipantIdentity,
+  getParticipantRegistration,
+  saveParticipantRegistration,
+} from '../utils/participantSession.js';
+import { supabase } from '../lib/supabase.js';
 
 export function CompetitionDetailsPage() {
   const { id } = useParams();
@@ -67,6 +74,76 @@ export function CompetitionDetailsPage() {
     };
   }, []);
 
+  const checkExistingParticipantRegistration = useCallback(
+    async (competitionRecord) => {
+      if (!competitionRecord?.id) return;
+
+      const localSaved = getParticipantRegistration(competitionRecord.id);
+      const identity = getParticipantIdentity() || {};
+
+      let authEmail = null;
+      if (supabase) {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          authEmail = sessionData?.session?.user?.email || null;
+        } catch {
+          // Ignore auth session retrieval failure
+        }
+      }
+
+      const queryPayload = {
+        registrationId: localSaved?.id || undefined,
+        email: authEmail || localSaved?.email || identity?.email || undefined,
+        mobileNumber: localSaved?.mobileNumber || identity?.mobileNumber || undefined,
+      };
+
+      if (!queryPayload.registrationId && !queryPayload.email && !queryPayload.mobileNumber) {
+        if (localSaved && !sessionRegistration) {
+          setSessionRegistration(localSaved);
+          if (localSaved.statusToken) {
+            setCheckoutToken(localSaved.statusToken);
+          }
+        }
+        return;
+      }
+
+      try {
+        const res = await apiClient.checkCompetitionRegistration(
+          competitionRecord.id,
+          queryPayload
+        );
+
+        if (!mountedRef.current) return;
+
+        if (res?.registered && res?.registration) {
+          setSessionRegistration(res.registration);
+      saveParticipantRegistration(
+        res.registration.competitionId || competition?.id,
+        res.registration,
+        res.statusToken
+      );
+          if (res.statusToken) {
+            setCheckoutToken(res.statusToken);
+          }
+          saveParticipantRegistration(competitionRecord.id, res.registration, res.statusToken);
+        } else if (localSaved && !sessionRegistration) {
+          setSessionRegistration(localSaved);
+          if (localSaved.statusToken) {
+            setCheckoutToken(localSaved.statusToken);
+          }
+        }
+      } catch {
+        if (mountedRef.current && localSaved && !sessionRegistration) {
+          setSessionRegistration(localSaved);
+          if (localSaved.statusToken) {
+            setCheckoutToken(localSaved.statusToken);
+          }
+        }
+      }
+    },
+    [sessionRegistration]
+  );
+
   const loadDetails = useCallback(
     async (force = false) => {
       setLoading(true);
@@ -79,6 +156,7 @@ export function CompetitionDetailsPage() {
         setCompetition(detailRes.competition || null);
         if (detailRes.competition) {
           setAllCompetitions([detailRes.competition]);
+          checkExistingParticipantRegistration(detailRes.competition);
         }
       } catch (err) {
         if (!mountedRef.current) return;
@@ -90,7 +168,7 @@ export function CompetitionDetailsPage() {
         }
       }
     },
-    [id]
+    [id, checkExistingParticipantRegistration]
   );
 
   useEffect(() => {
@@ -116,6 +194,11 @@ export function CompetitionDetailsPage() {
 
         if (outcome.registration) {
           setSessionRegistration(outcome.registration);
+          saveParticipantRegistration(
+            outcome.registration.competitionId || id,
+            outcome.registration,
+            outcome.statusToken
+          );
         }
         if (outcome.statusToken) {
           setCheckoutToken(outcome.statusToken);
@@ -170,6 +253,11 @@ export function CompetitionDetailsPage() {
       );
 
       setSessionRegistration(res.registration);
+      saveParticipantRegistration(
+        res.registration.competitionId || competition?.id,
+        res.registration,
+        res.statusToken
+      );
       if (res.statusToken) {
         setCheckoutToken(res.statusToken);
       }
@@ -254,6 +342,7 @@ export function CompetitionDetailsPage() {
   }
 
   const deadlinePassed = isDeadlineClosed(competition?.registrationDeadline);
+  const eventPassed = Boolean(competition && isPastEvent(competition.eventDate));
   const noCategories = !competition?.categories?.length;
   const compStatus = competition ? getCompetitionStatus(competition) : 'Draft';
   const regStatus = competition ? getRegistrationStatus(competition) : 'Closed';
@@ -261,7 +350,8 @@ export function CompetitionDetailsPage() {
     competition &&
       isRegistrationPermitted(competition) &&
       !noCategories &&
-      !competition.isCompleted
+      !competition.isCompleted &&
+      !eventPassed
   );
 
   const isRegisteredAndPaid = Boolean(
@@ -427,6 +517,8 @@ export function CompetitionDetailsPage() {
                 type="button"
                 disabled={
                   isRegisteredAndPaid ||
+                  competition?.isCompleted ||
+                  eventPassed ||
                   (!registrationPermitted && !hasPendingPayment && !hasFailedPayment) ||
                   retryingPayment
                 }
@@ -440,17 +532,19 @@ export function CompetitionDetailsPage() {
                   </>
                 ) : isRegisteredAndPaid ? (
                   <span>Already Registered</span>
-                ) : (hasPendingPayment || hasFailedPayment) ? (
+                ) : competition?.isCompleted ? (
+                  <span>Competition Completed</span>
+                ) : eventPassed ? (
+                  <span>Competition Concluded</span>
+                ) : (hasPendingPayment || hasFailedPayment) && registrationPermitted ? (
                   <>
                     <span>Retry Payment</span>
                     <RefreshCw className="h-4 w-4" />
                   </>
-                ) : competition?.isCompleted ? (
-                  <span>Competition Completed</span>
                 ) : compStatus === 'Live' && !registrationPermitted ? (
                   <span>Competition Live</span>
                 ) : regStatus === 'Closed' ? (
-                  <span>Registrations Closed</span>
+                  <span>Registration Closed</span>
                 ) : noCategories ? (
                   <span>Categories Pending</span>
                 ) : (
@@ -654,7 +748,12 @@ export function CompetitionDetailsPage() {
         competition={modalOpen ? competition : null}
         competitions={allCompetitions}
         onClose={() => setModalOpen(false)}
-        onRegistrationUpdated={(reg) => setSessionRegistration(reg)}
+        onRegistrationUpdated={(reg) => {
+          setSessionRegistration(reg);
+          if (reg && (reg.competitionId || competition?.id)) {
+            saveParticipantRegistration(reg.competitionId || competition.id, reg);
+          }
+        }}
       />
     </main>
   );
