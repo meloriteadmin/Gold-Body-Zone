@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="16" fill="#101010" />
+  <circle cx="32" cy="32" r="30" stroke="#F15A24" stroke-width="2" opacity="0.3"/>
+  <!-- Barbell Bar -->
+  <rect x="12" y="29.5" width="40" height="5" rx="2.5" fill="#FFFFFF"/>
+  <!-- Left Weight Plates -->
+  <rect x="18" y="18" width="5" height="28" rx="2" fill="#F15A24"/>
+  <rect x="12" y="22" width="4" height="20" rx="1.5" fill="#E94B16"/>
+  <!-- Right Weight Plates -->
+  <rect x="41" y="18" width="5" height="28" rx="2" fill="#F15A24"/>
+  <rect x="48" y="22" width="4" height="20" rx="1.5" fill="#E94B16"/>
+  <!-- Center Accent Grip Rings -->
+  <rect x="29" y="28" width="2" height="8" rx="1" fill="#F15A24"/>
+  <rect x="33" y="28" width="2" height="8" rx="1" fill="#F15A24"/>
+</svg>

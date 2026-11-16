@@ -90,7 +90,7 @@ router.delete(
 router.get('/competitions/:id/photos', listCompetitionPhotos);
 router.post(
   '/competitions/:id/photos',
-  uploadImageMiddleware.array('photos', 10),
+  uploadImageMiddleware.array('photos', 20),
   uploadCompetitionPhotos
 );
 router.delete(

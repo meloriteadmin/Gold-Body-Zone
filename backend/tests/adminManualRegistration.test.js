@@ -133,7 +133,28 @@ globalThis.__prisma = {
     async delete() {
       return {};
     },
-    async update() {
+    async update({ where, data }) {
+      const idx = mockRegistrations.findIndex((r) => r.id === where.id);
+      if (idx !== -1) {
+        const existing = mockRegistrations[idx];
+        const updated = {
+          ...existing,
+          ...data,
+          updatedAt: new Date(),
+          payment: data.payment?.create
+            ? {
+                id: 'pay-manual-' + (mockPayments.length + 1),
+                registrationId: existing.id,
+                ...data.payment.create,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+            : existing.payment,
+        };
+        mockRegistrations[idx] = updated;
+        if (updated.payment) mockPayments.push(updated.payment);
+        return updated;
+      }
       return {};
     },
     async updateMany() {
@@ -346,6 +367,139 @@ describe('Admin Manual Registration & Offline Payments', () => {
     assert.ok(err);
     assert.equal(err.statusCode, 400);
     assert.match(err.message, /Invalid payment method/i);
+  });
+
+  it('records offline payment with reference and marks PAID when admin confirms', async () => {
+    const res = createMockRes();
+    let err = null;
+
+    await createManualRegistration(
+      {
+        body: {
+          competitionId: 'comp-bodybuilding',
+          categoryId: 'cat-weight-1',
+          participantName: 'Rajesh Kulkarni',
+          email: 'rajesh.k@example.com',
+          mobileNumber: '9876543233',
+          gender: 'MALE',
+          age: 27,
+          heightCm: 176,
+          weightKg: 73,
+          district: 'Nashik',
+          representingType: 'INDIVIDUAL',
+          paymentMethod: 'OFFLINE',
+          offlinePaymentMethod: 'Bank Transfer (IMPS)',
+          paymentReference: 'UTR99887766',
+          offlineConfirmed: true,
+        },
+      },
+      res,
+      (e) => {
+        err = e;
+      }
+    );
+
+    assert.equal(err, null);
+    assert.equal(res.statusCode, 201);
+    const reg = res.payload.registration;
+    assert.equal(reg.participantName, 'Rajesh Kulkarni');
+    assert.equal(reg.paymentStatus, 'PAID');
+    assert.equal(reg.registrationStatus, 'CONFIRMED');
+    assert.equal(reg.paymentMethod, 'Bank Transfer (IMPS)');
+    assert.equal(reg.payment.verificationSource, 'ADMIN_OFFLINE (UTR99887766)');
+  });
+
+  it('reuses existing pending registration on retry without creating duplicate', async () => {
+    // First: create pending online UPI registration
+    const res1 = createMockRes();
+    await createManualRegistration(
+      {
+        body: {
+          competitionId: 'comp-bodybuilding',
+          categoryId: 'cat-weight-1',
+          participantName: 'Kiran Shinde',
+          email: 'kiran.s@example.com',
+          mobileNumber: '9876543244',
+          gender: 'MALE',
+          age: 25,
+          heightCm: 174,
+          weightKg: 71,
+          district: 'Pune',
+          representingType: 'INDIVIDUAL',
+          paymentMethod: 'UPI',
+        },
+      },
+      res1,
+      () => {}
+    );
+
+    const initialReg = res1.payload.registration;
+    assert.equal(initialReg.paymentStatus, 'PENDING');
+    assert.equal(initialReg.registrationStatus, 'PENDING');
+    const initialCode = initialReg.registrationCode;
+
+    // Second: retry / switch to offline cash payment for same participant
+    const res2 = createMockRes();
+    await createManualRegistration(
+      {
+        body: {
+          competitionId: 'comp-bodybuilding',
+          categoryId: 'cat-weight-1',
+          participantName: 'Kiran Shinde',
+          email: 'kiran.s@example.com',
+          mobileNumber: '9876543244',
+          gender: 'MALE',
+          age: 25,
+          heightCm: 174,
+          weightKg: 71,
+          district: 'Pune',
+          representingType: 'INDIVIDUAL',
+          paymentMethod: 'CASH',
+        },
+      },
+      res2,
+      () => {}
+    );
+
+    const updatedReg = res2.payload.registration;
+    assert.equal(updatedReg.paymentStatus, 'PAID');
+    assert.equal(updatedReg.registrationStatus, 'CONFIRMED');
+    assert.equal(updatedReg.registrationCode, initialCode);
+    assert.equal(mockRegistrations.filter((r) => r.email === 'kiran.s@example.com').length, 1);
+  });
+
+  it('rejects manual registration for a completed competition with 400 error', async () => {
+    mockCompetition.isCompleted = true;
+    const res = createMockRes();
+    let err = null;
+
+    await createManualRegistration(
+      {
+        body: {
+          competitionId: 'comp-bodybuilding',
+          categoryId: 'cat-weight-1',
+          participantName: 'Late Athlete',
+          email: 'late@example.com',
+          mobileNumber: '9876543219',
+          gender: 'MALE',
+          age: 26,
+          heightCm: 175,
+          weightKg: 72,
+          district: 'Pune',
+          representing: 'INDIVIDUAL',
+          paymentMethod: 'CASH',
+        },
+      },
+      res,
+      (e) => {
+        err = e;
+      }
+    );
+
+    mockCompetition.isCompleted = false;
+    assert.ok(err);
+    assert.equal(err.statusCode, 400);
+    assert.match(err.message, /completed competition/i);
   });
 
   it('filters registrations by source: ALL, ONLINE, and MANUAL', async () => {

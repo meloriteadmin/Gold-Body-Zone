@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { supabase } from './supabase.js';
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -8,18 +9,33 @@ export class ApiError extends Error {
   }
 }
 
+async function resolveToken(token) {
+  if (typeof token === 'string' && token.trim()) {
+    return token.trim();
+  }
+  if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        return data.session.access_token.trim();
+      }
+    } catch {
+      // Ignore session read error
+    }
+  }
+  return '';
+}
+
 async function request(
   path,
   { method = 'GET', token, body, isFormData = false, timeoutMs = 0 } = {}
 ) {
   const headers = {};
-  if (token) {
-    const rawToken = typeof token === 'string' ? token.trim() : '';
-    if (rawToken) {
-      headers.Authorization = rawToken.startsWith('Bearer ')
-        ? rawToken
-        : `Bearer ${rawToken}`;
-    }
+  const rawToken = await resolveToken(token);
+  if (rawToken) {
+    headers.Authorization = rawToken.startsWith('Bearer ')
+      ? rawToken
+      : `Bearer ${rawToken}`;
   }
   if (!isFormData && body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -404,7 +420,7 @@ export const apiClient = {
     }
     const qs = query.toString();
     const url = `${env.apiBaseUrl}/admin/registrations/export${qs ? `?${qs}` : ''}`;
-    const rawToken = typeof token === 'string' ? token.trim() : '';
+    const rawToken = await resolveToken(token);
     const headers = {};
     if (rawToken) {
       headers.Authorization = rawToken.startsWith('Bearer ')

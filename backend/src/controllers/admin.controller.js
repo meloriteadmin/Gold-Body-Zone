@@ -629,24 +629,59 @@ export async function deleteCompetition(req, res, next) {
       throw new HttpError(404, 'Competition not found.');
     }
 
+    if (existing.isCompleted) {
+      throw new HttpError(
+        400,
+        'This competition cannot be deleted because it is archived in Competition History. Completed and cancelled competitions must retain their competition and participant records.'
+      );
+    }
+
     const regCount = await prisma.registration.count({
       where: { competitionId: existing.id },
     });
     if (regCount > 0) {
       throw new HttpError(
         400,
-        `Cannot delete competition "${existing.name}" because it has ${regCount} existing participant registration${regCount === 1 ? '' : 's'}.`
+        `This competition cannot be deleted because participant registrations exist. (${regCount} participant registration record${regCount === 1 ? '' : 's'} found)`
       );
     }
 
     const previousStoragePath = existing.posterStoragePath;
 
-    await prisma.competitionCategory.deleteMany({
+    // Clean up event photos from Supabase storage bucket
+    const photos = await prisma.competitionPhoto.findMany({
       where: { competitionId: existing.id },
+      select: { id: true, photoStoragePath: true },
     });
+    for (const p of photos) {
+      if (p.photoStoragePath) {
+        await deleteImageFromBucket(p.photoStoragePath).catch(() => {});
+      }
+    }
 
-    await prisma.competition.delete({
-      where: { id: existing.id },
+    // Delete in safe cascade transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.competitionPhoto.deleteMany({
+        where: { competitionId: existing.id },
+      });
+
+      const categories = await tx.competitionCategory.findMany({
+        where: { competitionId: existing.id },
+        select: { id: true },
+      });
+      const catIds = categories.map((c) => c.id);
+      if (catIds.length > 0) {
+        await tx.categoryGroup.deleteMany({
+          where: { categoryId: { in: catIds } },
+        });
+        await tx.competitionCategory.deleteMany({
+          where: { id: { in: catIds } },
+        });
+      }
+
+      await tx.competition.delete({
+        where: { id: existing.id },
+      });
     });
 
     if (previousStoragePath) {

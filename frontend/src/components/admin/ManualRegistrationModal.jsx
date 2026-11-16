@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  ArrowLeft,
+  ArrowRight,
   Banknote,
   Check,
   CheckCircle2,
   Clock,
   Coins,
   Loader2,
-  Plus,
   QrCode,
   RefreshCw,
   ShieldAlert,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiClient } from '../../lib/apiClient.js';
+import { launchCashfreeCheckout } from '../../utils/cashfreeCheckout.js';
 import { checkAgeEligibility } from '../../utils/competitionHelpers.js';
 import { formatFee } from '../../utils/formatters.js';
 
@@ -59,23 +61,6 @@ const MAHARASHTRA_DISTRICTS = [
   'Other / Outside Maharashtra',
 ];
 
-const PAYMENT_METHODS = [
-  {
-    id: 'CASH',
-    label: 'Cash',
-    sublabel: 'Instant Confirmed & Paid',
-    icon: Banknote,
-    accent: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
-  },
-  {
-    id: 'UPI',
-    label: 'UPI (Cashfree Dynamic QR)',
-    sublabel: 'Instant Scan & Pay Verification',
-    icon: Coins,
-    accent: 'border-blue-500/40 bg-blue-500/10 text-blue-400',
-  },
-];
-
 export function ManualRegistrationModal({
   isOpen,
   competitions = [],
@@ -85,6 +70,10 @@ export function ManualRegistrationModal({
 }) {
   const { accessToken } = useAuth();
 
+  // Wizard Step: 'DETAILS' (Step 1) | 'PAYMENT' (Step 2)
+  const [step, setStep] = useState('DETAILS');
+
+  // Step 1: Participant Form State
   const [competitionId, setCompetitionId] = useState('');
   const [participantName, setParticipantName] = useState('');
   const [email, setEmail] = useState('');
@@ -98,19 +87,23 @@ export function ManualRegistrationModal({
   const [district, setDistrict] = useState('Nashik');
   const [representingType, setRepresentingType] = useState('GYM');
   const [gymName, setGymName] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('CASH');
 
+  // Step 2: Payment Selection State (Exactly 2 options: 'UPI' or 'CASH')
+  const [paymentOption, setPaymentOption] = useState('UPI'); // 'UPI' | 'CASH'
+  const [cashReference, setCashReference] = useState('');
+  const [cashConfirmed, setCashConfirmed] = useState(false);
+
+  // Submission & Validation State
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
-  // Dynamic Cashfree UPI QR state
-  const [qrModalData, setQrModalData] = useState(null);
-  const [qrVerified, setQrVerified] = useState(false);
-  const [checkingPayment, setCheckingPayment] = useState(false);
-  const [qrStatusText, setQrStatusText] = useState('');
+  // Active / Cached Registration & UPI Session for Retry
+  const [activeRegistration, setActiveRegistration] = useState(null);
+  const [cashfreeData, setCashfreeData] = useState(null);
+  const [paymentNotice, setPaymentNotice] = useState('');
 
-  // Determine active competition
+  // Active Target Competition
   const activeCompetition = useMemo(() => {
     return (
       competitions.find((c) => c.id === competitionId) ||
@@ -119,7 +112,7 @@ export function ManualRegistrationModal({
     );
   }, [competitions, competitionId]);
 
-  // Sync competitionId on open
+  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       if (selectedCompetitionId) {
@@ -136,13 +129,15 @@ export function ManualRegistrationModal({
       setDistrict('Nashik');
       setRepresentingType('GYM');
       setGymName('');
-      setPaymentMethod('CASH');
+      setStep('DETAILS');
+      setPaymentOption('UPI');
+      setCashReference('');
+      setCashConfirmed(false);
       setFormError('');
       setFieldErrors({});
-      setQrModalData(null);
-      setQrVerified(false);
-      setCheckingPayment(false);
-      setQrStatusText('');
+      setActiveRegistration(null);
+      setCashfreeData(null);
+      setPaymentNotice('');
     }
   }, [isOpen, selectedCompetitionId, competitions]);
 
@@ -169,7 +164,6 @@ export function ManualRegistrationModal({
     return ['MALE', 'FEMALE', 'OTHER'];
   }, [activeCompetition, isWomensCompetition]);
 
-  // Adjust default gender when competition changes
   useEffect(() => {
     if (allowedGenders.length === 1) {
       setGender(allowedGenders[0]);
@@ -178,7 +172,6 @@ export function ManualRegistrationModal({
     }
   }, [allowedGenders, gender]);
 
-  // Filter categories by gender and competition restrictions
   const compatibleCategories = useMemo(() => {
     if (!activeCompetition?.categories) return [];
     return activeCompetition.categories.filter((cat) => {
@@ -211,7 +204,6 @@ export function ManualRegistrationModal({
     });
   }, [activeCompetition, gender]);
 
-  // Sync categoryId if currently selected is invalid
   useEffect(() => {
     if (compatibleCategories.length === 1) {
       setCategoryId(compatibleCategories[0].id);
@@ -236,10 +228,7 @@ export function ManualRegistrationModal({
   useEffect(() => {
     if (availableGroups.length > 0 && !groupId) {
       setGroupId(availableGroups[0].id);
-    } else if (
-      groupId &&
-      !availableGroups.some((g) => g.id === groupId)
-    ) {
+    } else if (groupId && !availableGroups.some((g) => g.id === groupId)) {
       setGroupId(availableGroups[0]?.id || '');
     }
   }, [availableGroups, groupId]);
@@ -264,7 +253,7 @@ export function ManualRegistrationModal({
     setFormError('');
   };
 
-  const validateForm = () => {
+  const validateParticipantDetails = () => {
     const errs = {};
     if (!activeCompetition?.id) errs.competitionId = 'Competition is required.';
     if (!participantName.trim() || participantName.trim().length < 2) {
@@ -301,7 +290,10 @@ export function ManualRegistrationModal({
     }
 
     if (!district) errs.district = 'Please select a district.';
-    if (representingType === 'GYM' && (!gymName.trim() || gymName.trim().length < 2)) {
+    if (
+      representingType === 'GYM' &&
+      (!gymName.trim() || gymName.trim().length < 2)
+    ) {
       errs.gymName = 'Gym name must be at least 2 characters.';
     }
 
@@ -309,291 +301,137 @@ export function ManualRegistrationModal({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const handleProceedToPayment = (e) => {
     e.preventDefault();
     setFormError('');
-
-    if (!validateForm()) {
+    if (!validateParticipantDetails()) {
       setFormError('Please resolve the errors highlighted below.');
       return;
     }
+    setStep('PAYMENT');
+  };
 
+  const buildPayload = (overrideMethod, extra = {}) => {
+    return {
+      competitionId: activeCompetition.id,
+      categoryId,
+      groupId: groupId || undefined,
+      participantName: participantName.trim(),
+      email: email.trim().toLowerCase(),
+      mobileNumber: mobileNumber.replace(/\D/g, ''),
+      gender,
+      age: Number.parseInt(age, 10),
+      heightCm: isWomensCompetition
+        ? undefined
+        : heightCm
+          ? Number.parseFloat(heightCm)
+          : undefined,
+      weightKg: isWomensCompetition
+        ? undefined
+        : weightKg
+          ? Number.parseFloat(weightKg)
+          : undefined,
+      district,
+      representingType,
+      gymName:
+        representingType === 'GYM'
+          ? gymName.trim()
+          : 'Other / Individual',
+      paymentMethod: overrideMethod,
+      ...extra,
+    };
+  };
+
+  // Option 1: UPI — Open Cashfree Checkout (same as public registration)
+  const handleUpiCheckout = async () => {
+    setFormError('');
+    setPaymentNotice('');
     setSubmitting(true);
     try {
-      const payload = {
-        competitionId: activeCompetition.id,
-        categoryId,
-        groupId: groupId || undefined,
-        participantName: participantName.trim(),
-        email: email.trim().toLowerCase(),
-        mobileNumber: mobileNumber.replace(/\D/g, ''),
-        gender,
-        age: Number.parseInt(age, 10),
-        heightCm: heightCm ? Number.parseFloat(heightCm) : undefined,
-        weightKg: weightKg ? Number.parseFloat(weightKg) : undefined,
-        district,
-        representingType,
-        gymName:
-          representingType === 'GYM'
-            ? gymName.trim()
-            : 'Other / Individual',
-        paymentMethod,
-      };
-
+      const payload = buildPayload('UPI');
       const res = await apiClient.createManualRegistration(accessToken, payload);
-      if (res.upiQr) {
-        setQrModalData({
-          registration: res.registration,
-          upiQr: res.upiQr,
-        });
-        setQrVerified(false);
-        setQrStatusText('Waiting for UPI payment...');
-      } else {
+      setActiveRegistration(res.registration);
+
+      const cfInfo = res.cashfree || (res.upiQr ? {
+        configured: true,
+        mode: 'sandbox',
+        paymentSessionId: res.upiQr.paymentSessionId,
+        orderId: res.upiQr.orderId,
+      } : null);
+
+      setCashfreeData(cfInfo);
+
+      if (!cfInfo?.paymentSessionId) {
+        throw new Error('Cashfree payment session could not be initialized.');
+      }
+
+      // Launch existing Cashfree Checkout (modal or redirect)
+      const outcome = await launchCashfreeCheckout({
+        mode: cfInfo.mode || 'sandbox',
+        paymentSessionId: cfInfo.paymentSessionId,
+        orderId: cfInfo.orderId,
+        registrationId: res.registration.id,
+      });
+
+      // Post-checkout: verify transaction through the backend before marking Confirmed/Paid
+      const verifyRes = await apiClient.verifyRegistrationPayment(
+        accessToken,
+        res.registration.id
+      );
+
+      if (verifyRes.isPaid || verifyRes.registration?.paymentStatus === 'PAID') {
         if (onSuccess) {
           onSuccess({
-            ...res.registration,
+            ...verifyRes.registration,
             competitionName: activeCompetition?.name,
           });
         }
         onClose();
+      } else {
+        // If payment was cancelled, failed, or pending: do not mark confirmed
+        setPaymentNotice('Payment not completed. Please retry to confirm your registration.');
       }
     } catch (err) {
-      setFormError(err.message || 'Failed to create manual registration.');
+      setPaymentNotice(err.message || 'Payment not completed. Please retry to confirm your registration.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const checkUpiStatus = async (showLoading = true) => {
-    if (!qrModalData?.registration?.id || !accessToken) return;
-    if (showLoading) setCheckingPayment(true);
+  // Option 2: Cash — Confirm cash received, directly save to DB as Paid
+  const handleCashPayment = async () => {
+    setFormError('');
+    setPaymentNotice('');
+
+    if (!cashConfirmed) {
+      setFormError('Please check the confirmation box verifying cash receipt.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const result = await apiClient.verifyRegistrationPayment(
-        accessToken,
-        qrModalData.registration.id
-      );
-      if (result.isPaid) {
-        setQrVerified(true);
-        setQrStatusText('Payment verified successfully! Registration is CONFIRMED (PAID).');
-        if (onSuccess) {
-          onSuccess({
-            ...result.registration,
-            competitionName: activeCompetition?.name,
-          });
-        }
-        onClose();
-      } else {
-        setQrStatusText('Payment still pending. Waiting for participant to complete payment...');
+      const payload = buildPayload('CASH', {
+        paymentReference: cashReference.trim() || undefined,
+        offlineConfirmed: true,
+      });
+
+      const res = await apiClient.createManualRegistration(accessToken, payload);
+
+      if (onSuccess) {
+        onSuccess({
+          ...res.registration,
+          competitionName: activeCompetition?.name,
+        });
       }
+      onClose();
     } catch (err) {
-      console.warn('Payment check failed:', err);
+      setFormError(err.message || 'Failed to save cash registration.');
     } finally {
-      if (showLoading) setCheckingPayment(false);
+      setSubmitting(false);
     }
   };
 
-  // Poll payment status every 3 seconds while in QR view and not yet verified
-  useEffect(() => {
-    if (!qrModalData || qrVerified || !isOpen) return;
-    const interval = setInterval(() => {
-      checkUpiStatus(false);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [qrModalData, qrVerified, isOpen, accessToken]);
-
   if (!isOpen) return null;
-
-  if (qrModalData) {
-    const { registration, upiQr } = qrModalData;
-    return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="upi-qr-modal-title"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      >
-        <div
-          onClick={onClose}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
-        />
-
-        <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col rounded-3xl border border-white/10 bg-[#171717] shadow-2xl overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-                <QrCode className="h-5 w-5" />
-              </div>
-              <div>
-                <h2
-                  id="upi-qr-modal-title"
-                  className="font-display text-lg font-bold tracking-wide text-white uppercase"
-                >
-                  Cashfree Dynamic UPI QR
-                </h2>
-                <p className="text-xs text-zinc-400">
-                  Scan and complete payment using any UPI app
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-white/10 p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-5 text-center">
-            {/* Participant & Competition Details Pill */}
-            <div className="rounded-2xl border border-white/[0.06] bg-[#222222] p-4 text-left space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Participant:</span>
-                <span className="font-semibold text-white">
-                  {registration.participantName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Registration ID:</span>
-                <span className="font-mono font-bold text-[#F15A24]">
-                  {registration.registrationCode}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Competition:</span>
-                <span className="text-zinc-200">
-                  {activeCompetition?.name || 'Competition'}
-                </span>
-              </div>
-              {registration.category && (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Category:</span>
-                  <span className="text-zinc-200">
-                    {registration.category.gender}: {registration.category.name}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Fee Amount Banner */}
-            <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3.5">
-              <p className="text-[11px] font-bold tracking-wider text-blue-400 uppercase">
-                Exact Registration Fee
-              </p>
-              <p className="font-display text-3xl font-extrabold text-white mt-1">
-                {formatFee(upiQr.amount)}
-              </p>
-            </div>
-
-            {/* QR Code Presentation Box */}
-            <div className="mx-auto flex w-60 h-60 items-center justify-center rounded-2xl bg-white p-3 shadow-2xl ring-2 ring-white/20">
-              {upiQr.qrDataUrl ? (
-                <img
-                  src={upiQr.qrDataUrl}
-                  alt="Cashfree UPI Dynamic QR Code"
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-zinc-500 text-xs">
-                  <Loader2 className="h-8 w-8 animate-spin text-[#F15A24] mb-2" />
-                  <span>Loading QR...</span>
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs text-zinc-400">
-              Scan with{' '}
-              <span className="font-semibold text-zinc-200">
-                Google Pay, PhonePe, Paytm, BHIM
-              </span>
-              , or any banking UPI app.
-            </p>
-
-            {/* Verification Status Banner */}
-            {qrVerified ? (
-              <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-left">
-                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-400 mt-0.5" />
-                <div className="text-xs">
-                  <p className="font-bold text-emerald-400 uppercase tracking-wide">
-                    Payment Verified Successfully!
-                  </p>
-                  <p className="text-emerald-200/90 mt-0.5">
-                    Registration is now CONFIRMED (PAID). A confirmation email
-                    has been sent to {registration.email}.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#222222] px-4 py-3 text-xs">
-                <div className="flex items-center gap-2 text-zinc-300">
-                  <Clock className="h-4 w-4 animate-pulse text-amber-400" />
-                  <span>{qrStatusText || 'Waiting for UPI payment...'}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => checkUpiStatus(true)}
-                  disabled={checkingPayment}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/10 disabled:opacity-50"
-                >
-                  <RefreshCw
-                    className={`h-3 w-3 ${checkingPayment ? 'animate-spin' : ''}`}
-                  />
-                  Check Status
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Footer Controls */}
-          <div className="border-t border-white/[0.08] px-6 py-4 flex items-center justify-end gap-3 bg-[#141414]">
-            {qrVerified ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onSuccess) onSuccess(registration);
-                  onClose();
-                }}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-emerald-500/20 hover:brightness-110"
-              >
-                <Check className="h-4 w-4" />
-                Done & View Registrations
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-zinc-400 hover:bg-white/5 hover:text-white"
-                >
-                  Cancel & Close
-                </button>
-                <button
-                  type="button"
-                  onClick={() => checkUpiStatus(true)}
-                  disabled={checkingPayment}
-                  className="flex items-center gap-2 rounded-xl bg-[#F15A24] px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#E04F1D] disabled:opacity-60"
-                >
-                  {checkingPayment ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Verifying...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Verify Payment
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -622,7 +460,9 @@ export function ManualRegistrationModal({
                 Manual Participant Registration
               </h2>
               <p className="text-xs text-[#A1A1AA]">
-                Admin offline entry with Cash or UPI payment tracking.
+                {step === 'DETAILS'
+                  ? 'Step 1 of 2: Participant Information & Category Selection'
+                  : 'Step 2 of 2: Payment Collection (UPI or Cash)'}
               </p>
             </div>
           </div>
@@ -635,9 +475,44 @@ export function ManualRegistrationModal({
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-          {formError && (
+        {/* Wizard Stepper Tabs */}
+        <div className="grid grid-cols-2 border-b border-white/[0.06] text-xs">
+          <button
+            type="button"
+            onClick={() => setStep('DETAILS')}
+            className={`flex items-center justify-center gap-2 py-2.5 font-bold transition-all ${
+              step === 'DETAILS'
+                ? 'border-b-2 border-[#F15A24] bg-white/[0.02] text-[#F15A24]'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
+              1
+            </span>
+            <span>1. Participant Details</span>
+          </button>
+          <button
+            type="button"
+            disabled={step === 'DETAILS'}
+            onClick={() => {
+              if (validateParticipantDetails()) setStep('PAYMENT');
+            }}
+            className={`flex items-center justify-center gap-2 py-2.5 font-bold transition-all ${
+              step === 'PAYMENT'
+                ? 'border-b-2 border-[#F15A24] bg-white/[0.02] text-[#F15A24]'
+                : 'cursor-not-allowed opacity-50 text-zinc-500'
+            }`}
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
+              2
+            </span>
+            <span>2. Payment (UPI / Cash)</span>
+          </button>
+        </div>
+
+        {/* Top Alerts */}
+        {formError && (
+          <div className="px-6 pt-4">
             <div
               role="alert"
               className="flex items-center gap-2.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-200"
@@ -645,419 +520,691 @@ export function ManualRegistrationModal({
               <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
               <span>{formError}</span>
             </div>
-          )}
-
-          {/* Section 1: Competition Selection */}
-          <div className="space-y-3 rounded-2xl border border-white/[0.06] bg-[#222222] p-4">
-            <label
-              htmlFor="manual-comp-select"
-              className="text-xs font-bold tracking-wider text-[#F15A24] uppercase"
-            >
-              Select Target Competition *
-            </label>
-            <select
-              id="manual-comp-select"
-              value={activeCompetition?.id || ''}
-              onChange={(e) => {
-                setCompetitionId(e.target.value);
-                setCategoryId('');
-                setGroupId('');
-              }}
-              className="h-11 w-full rounded-xl border border-white/10 bg-[#171717] px-3.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none"
-            >
-              {competitions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.competitionType}) — Fee: {formatFee(c.registrationFee)}
-                </option>
-              ))}
-            </select>
-
-            {activeCompetition?.ageEligibility && (
-              <div className="flex items-center gap-2 text-xs text-amber-300">
-                <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" />
-                <span>Eligibility: {activeCompetition.ageEligibility}</span>
-              </div>
-            )}
           </div>
+        )}
 
-          {/* Section 2: Participant Details */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
-              Participant Information
-            </h3>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  value={participantName}
-                  onChange={(e) => {
-                    setParticipantName(e.target.value);
-                    clearFieldError('participantName');
-                  }}
-                  placeholder="e.g. Rahul Patil"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                />
-                {fieldErrors.participantName && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.participantName}
+        {/* STEP 1: PARTICIPANT DETAILS */}
+        {step === 'DETAILS' && (
+          <form
+            onSubmit={handleProceedToPayment}
+            className="flex-1 overflow-y-auto p-6 space-y-6"
+          >
+            {/* Prominent Fee Card (Requirement 1) */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-[#F15A24]/30 bg-[#F15A24]/10 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#F15A24]/20 text-[#F15A24]">
+                  <Banknote className="h-6 w-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold tracking-widest text-[#F15A24] uppercase">
+                    Registration Fee Required
+                  </span>
+                  <p className="font-display text-2xl font-black text-white">
+                    {formatFee(activeCompetition?.registrationFee)}
                   </p>
-                )}
+                </div>
               </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Email Address *
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    clearFieldError('email');
-                  }}
-                  placeholder="athlete@example.com"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                />
-                {fieldErrors.email && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.email}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Mobile Number (10 Digits) *
-                </label>
-                <input
-                  type="tel"
-                  maxLength={10}
-                  value={mobileNumber}
-                  onChange={(e) => {
-                    setMobileNumber(e.target.value.replace(/\D/g, ''));
-                    clearFieldError('mobileNumber');
-                  }}
-                  placeholder="9876543210"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                />
-                {fieldErrors.mobileNumber && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.mobileNumber}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Age (Years) *
-                </label>
-                <input
-                  type="number"
-                  min={10}
-                  max={99}
-                  value={age}
-                  onChange={(e) => {
-                    setAge(e.target.value);
-                    clearFieldError('age');
-                  }}
-                  placeholder="e.g. 25"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                />
-                {fieldErrors.age && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.age}
-                  </p>
-                )}
+              <div className="text-left sm:text-right text-xs">
+                <p className="font-semibold text-white">
+                  {activeCompetition?.name || 'Selected Competition'}
+                </p>
+                <p className="text-zinc-400">
+                  Choose UPI or Cash at next step to confirm registration
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Gender *
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => {
-                    setGender(e.target.value);
-                    clearFieldError('gender');
-                  }}
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
-                >
-                  {allowedGenders.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Target Competition */}
+            <div className="space-y-3 rounded-2xl border border-white/[0.06] bg-[#222222] p-4">
+              <label
+                htmlFor="manual-comp-select"
+                className="text-xs font-bold tracking-wider text-[#F15A24] uppercase"
+              >
+                Select Target Competition *
+              </label>
+              <select
+                id="manual-comp-select"
+                value={activeCompetition?.id || ''}
+                onChange={(e) => {
+                  setCompetitionId(e.target.value);
+                  setCategoryId('');
+                  setGroupId('');
+                }}
+                className="h-11 w-full rounded-xl border border-white/10 bg-[#171717] px-3.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none"
+              >
+                {competitions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.competitionType})
+                    {c.isCompleted ? ' — [COMPLETED]' : ''} — Fee:{' '}
+                    {formatFee(c.registrationFee)}
+                  </option>
+                ))}
+              </select>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  District (Zilha) *
-                </label>
-                <select
-                  value={district}
-                  onChange={(e) => {
-                    setDistrict(e.target.value);
-                    clearFieldError('district');
-                  }}
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
-                >
-                  {MAHARASHTRA_DISTRICTS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {activeCompetition?.isCompleted && (
+                <div className="flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-200">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-blue-400" />
+                  <span>
+                    <strong>Registration Closed:</strong> This competition is
+                    marked as Completed. New manual registrations cannot be
+                    submitted.
+                  </span>
+                </div>
+              )}
+
+              {activeCompetition?.ageEligibility && (
+                <div className="flex items-center gap-2 text-xs text-amber-300">
+                  <ShieldAlert className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>Eligibility: {activeCompetition.ageEligibility}</span>
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* Section 3: Categories & Groups */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
-              Category &amp; Division Selection
-            </h3>
+            {/* Participant Personal Details */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                Participant Information
+              </h3>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Competition Category *
-                </label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => {
-                    setCategoryId(e.target.value);
-                    setGroupId('');
-                    clearFieldError('categoryId');
-                  }}
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
-                >
-                  {compatibleCategories.length === 0 ? (
-                    <option value="">No categories available</option>
-                  ) : (
-                    compatibleCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name} ({cat.categoryType})
-                      </option>
-                    ))
-                  )}
-                </select>
-                {fieldErrors.categoryId && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.categoryId}
-                  </p>
-                )}
-              </div>
-
-              {availableGroups.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-300">
-                    Group / Division (Optional)
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={participantName}
+                    onChange={(e) => {
+                      setParticipantName(e.target.value);
+                      clearFieldError('participantName');
+                    }}
+                    placeholder="e.g. Rahul Patil"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.participantName && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.participantName}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      clearFieldError('email');
+                    }}
+                    placeholder="athlete@example.com"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.email && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.email}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Mobile Number (10 Digits) *
+                  </label>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={mobileNumber}
+                    onChange={(e) => {
+                      setMobileNumber(e.target.value.replace(/\D/g, ''));
+                      clearFieldError('mobileNumber');
+                    }}
+                    placeholder="9876543210"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.mobileNumber && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.mobileNumber}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Age (Years) *
+                  </label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={99}
+                    value={age}
+                    onChange={(e) => {
+                      setAge(e.target.value);
+                      clearFieldError('age');
+                    }}
+                    placeholder="e.g. 25"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.age && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.age}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Gender *
                   </label>
                   <select
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value)}
+                    value={gender}
+                    onChange={(e) => {
+                      setGender(e.target.value);
+                      clearFieldError('gender');
+                    }}
                     className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
                   >
-                    <option value="">No Group</option>
-                    {availableGroups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
+                    {allowedGenders.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    District (Zilha) *
+                  </label>
+                  <select
+                    value={district}
+                    onChange={(e) => {
+                      setDistrict(e.target.value);
+                      clearFieldError('district');
+                    }}
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                  >
+                    {MAHARASHTRA_DISTRICTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
-            {/* Physical Measurements (not required for Women's Competition) */}
-            {!isWomensCompetition && (
+            {/* Categories & Groups */}
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                Category &amp; Division Selection
+              </h3>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-300">
-                    Height (cm) *
+                    Competition Category *
                   </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={heightCm}
+                  <select
+                    value={categoryId}
                     onChange={(e) => {
-                      setHeightCm(e.target.value);
-                      clearFieldError('heightCm');
+                      setCategoryId(e.target.value);
+                      setGroupId('');
+                      clearFieldError('categoryId');
                     }}
-                    placeholder="e.g. 175.5"
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                  />
-                  {fieldErrors.heightCm && (
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                  >
+                    {compatibleCategories.length === 0 ? (
+                      <option value="">No categories available</option>
+                    ) : (
+                      compatibleCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name} ({cat.categoryType})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {fieldErrors.categoryId && (
                     <p className="mt-1 text-[11px] text-red-400">
-                      {fieldErrors.heightCm}
+                      {fieldErrors.categoryId}
                     </p>
                   )}
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-300">
-                    Weight (kg) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={weightKg}
-                    onChange={(e) => {
-                      setWeightKg(e.target.value);
-                      clearFieldError('weightKg');
-                    }}
-                    placeholder="e.g. 72.0"
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                  />
-                  {fieldErrors.weightKg && (
-                    <p className="mt-1 text-[11px] text-red-400">
-                      {fieldErrors.weightKg}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section 4: Representing Gym / Individual */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
-              Affiliation
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setRepresentingType('GYM')}
-                className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
-                  representingType === 'GYM'
-                    ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
-                    : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
-                }`}
-              >
-                Representing Gym
-              </button>
-              <button
-                type="button"
-                onClick={() => setRepresentingType('INDIVIDUAL')}
-                className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
-                  representingType === 'INDIVIDUAL'
-                    ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
-                    : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
-                }`}
-              >
-                Individual
-              </button>
-            </div>
-
-            {representingType === 'GYM' && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-300">
-                  Gym Name *
-                </label>
-                <input
-                  type="text"
-                  value={gymName}
-                  onChange={(e) => {
-                    setGymName(e.target.value);
-                    clearFieldError('gymName');
-                  }}
-                  placeholder="e.g. Iron Gym & Fitness"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-                />
-                {fieldErrors.gymName && (
-                  <p className="mt-1 text-[11px] text-red-400">
-                    {fieldErrors.gymName}
-                  </p>
+                {availableGroups.length > 0 && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-300">
+                      Group / Division (Optional)
+                    </label>
+                    <select
+                      value={groupId}
+                      onChange={(e) => setGroupId(e.target.value)}
+                      className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
+                    >
+                      <option value="">No Group</option>
+                      {availableGroups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* Section 5: Offline Payment Method */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold tracking-wider text-[#F15A24] uppercase">
-                Payment Method *
-              </h3>
-              <span className="text-xs font-semibold text-white">
-                Fee: {formatFee(activeCompetition?.registrationFee)}
-              </span>
+              {!isWomensCompetition && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-300">
+                      Height (cm) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={heightCm}
+                      onChange={(e) => {
+                        setHeightCm(e.target.value);
+                        clearFieldError('heightCm');
+                      }}
+                      placeholder="e.g. 175.5"
+                      className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                    />
+                    {fieldErrors.heightCm && (
+                      <p className="mt-1 text-[11px] text-red-400">
+                        {fieldErrors.heightCm}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-300">
+                      Weight (kg) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={weightKg}
+                      onChange={(e) => {
+                        setWeightKg(e.target.value);
+                        clearFieldError('weightKg');
+                      }}
+                      placeholder="e.g. 72.0"
+                      className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                    />
+                    {fieldErrors.weightKg && (
+                      <p className="mt-1 text-[11px] text-red-400">
+                        {fieldErrors.weightKg}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {PAYMENT_METHODS.map((pm) => {
-                const Icon = pm.icon;
-                const isSelected = paymentMethod === pm.id;
-                return (
-                  <div
-                    key={pm.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setPaymentMethod(pm.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setPaymentMethod(pm.id);
-                      }
+            {/* Affiliation */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
+                Affiliation
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRepresentingType('GYM')}
+                  className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
+                    representingType === 'GYM'
+                      ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
+                      : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Representing Gym
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRepresentingType('INDIVIDUAL')}
+                  className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition-colors ${
+                    representingType === 'INDIVIDUAL'
+                      ? 'border-[#F15A24] bg-[#F15A24]/15 text-[#F15A24]'
+                      : 'border-white/10 bg-[#222222] text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Individual
+                </button>
+              </div>
+
+              {representingType === 'GYM' && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-300">
+                    Gym Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={gymName}
+                    onChange={(e) => {
+                      setGymName(e.target.value);
+                      clearFieldError('gymName');
                     }}
-                    className={`flex flex-col justify-between rounded-xl border p-3.5 cursor-pointer transition-all ${
-                      isSelected
-                        ? pm.accent + ' shadow-lg'
-                        : 'border-white/10 bg-[#222222] text-zinc-300 hover:border-white/20'
-                    }`}
-                  >
+                    placeholder="e.g. Iron Gym & Fitness"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.gymName && (
+                    <p className="mt-1 text-[11px] text-red-400">
+                      {fieldErrors.gymName}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Step 1 Footer */}
+            <div className="flex items-center justify-end gap-3 border-t border-white/[0.08] pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-zinc-400 hover:bg-white/5 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={activeCompetition?.isCompleted}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#F15A24]/20 hover:brightness-110 disabled:opacity-50"
+              >
+                <span>
+                  Proceed to Payment (
+                  {formatFee(activeCompetition?.registrationFee)})
+                </span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* STEP 2: EXACTLY TWO PAYMENT OPTIONS (UPI or Cash) */}
+        {step === 'PAYMENT' && (
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Review Summary Header */}
+            <div className="rounded-2xl border border-white/[0.08] bg-[#222222] p-4 text-xs space-y-2.5">
+              <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+                <span className="text-zinc-400">Participant:</span>
+                <span className="font-bold text-white">
+                  {participantName} ({email})
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+                <span className="text-zinc-400">Competition &amp; Category:</span>
+                <span className="font-medium text-zinc-200">
+                  {activeCompetition?.name} • {selectedCategory?.name}
+                  {groupId &&
+                  availableGroups.find((g) => g.id === groupId)
+                    ? ` (${availableGroups.find((g) => g.id === groupId)?.name})`
+                    : ''}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="font-bold text-zinc-300 uppercase tracking-wider text-[11px]">
+                  Registration Fee Due:
+                </span>
+                <span className="font-display text-2xl font-black text-[#F15A24]">
+                  {formatFee(activeCompetition?.registrationFee)}
+                </span>
+              </div>
+            </div>
+
+            {/* Exactly Two Payment Options Selector */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold tracking-wider text-[#F15A24] uppercase">
+                Select Payment Option *
+              </h3>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* 1. UPI Option */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setPaymentOption('UPI')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPaymentOption('UPI');
+                    }
+                  }}
+                  className={`flex flex-col justify-between rounded-2xl border p-4 cursor-pointer transition-all ${
+                    paymentOption === 'UPI'
+                      ? 'border-blue-500/60 bg-blue-500/10 shadow-lg shadow-blue-500/10 ring-1 ring-blue-500/30'
+                      : 'border-white/10 bg-[#222222] text-zinc-300 hover:border-white/20'
+                  }`}
+                >
+                  <div>
                     <div className="flex items-center justify-between">
-                      <Icon className="h-5 w-5" />
-                      {isSelected && <Check className="h-4 w-4" />}
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
+                        <Coins className="h-5 w-5" />
+                      </div>
+                      {paymentOption === 'UPI' && (
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white">
+                          <Check className="h-3 w-3" />
+                        </span>
+                      )}
                     </div>
                     <div className="mt-3">
-                      <p className="text-xs font-bold">{pm.label}</p>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">
-                        {pm.sublabel}
+                      <p className="text-sm font-bold text-white">1. UPI</p>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                        Cashfree Checkout (GPay, PhonePe, Paytm, BHIM, or QR).
                       </p>
                     </div>
                   </div>
-                );
-              })}
+                  <span className="mt-3 inline-block rounded-full bg-blue-500/15 px-2.5 py-0.5 text-[10px] font-bold text-blue-400 w-fit">
+                    Cashfree Checkout • Backend Verified
+                  </span>
+                </div>
+
+                {/* 2. Cash Option */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setPaymentOption('CASH')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPaymentOption('CASH');
+                    }
+                  }}
+                  className={`flex flex-col justify-between rounded-2xl border p-4 cursor-pointer transition-all ${
+                    paymentOption === 'CASH'
+                      ? 'border-emerald-500/60 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+                      : 'border-white/10 bg-[#222222] text-zinc-300 hover:border-white/20'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400">
+                        <Banknote className="h-5 w-5" />
+                      </div>
+                      {paymentOption === 'CASH' && (
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                          <Check className="h-3 w-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-sm font-bold text-white">2. Cash</p>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                        Confirm cash received directly at the desk. Saves to DB as Paid.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="mt-3 inline-block rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400 w-fit">
+                    Direct DB Save • Marked as Paid
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Notice / Failure Notice with Retry */}
+            {paymentNotice && (
+              <div
+                role="alert"
+                className="flex items-start justify-between gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-xs text-red-200"
+              >
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+                  <span>{paymentNotice}</span>
+                </div>
+                {paymentOption === 'UPI' && (
+                  <button
+                    type="button"
+                    onClick={handleUpiCheckout}
+                    disabled={submitting}
+                    className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-1 font-bold text-white uppercase hover:bg-red-500/30 disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`h-3 w-3 ${submitting ? 'animate-spin' : ''}`}
+                    />
+                    <span>Retry Payment</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* UPI Option Container */}
+            {paymentOption === 'UPI' && (
+              <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <Coins className="h-5 w-5 shrink-0 text-blue-400 mt-0.5" />
+                  <div className="text-xs space-y-1">
+                    <p className="font-bold text-white">
+                      Cashfree UPI Checkout
+                    </p>
+                    <p className="text-zinc-300 leading-relaxed">
+                      Click below to open Cashfree Checkout. The participant can
+                      complete payment using any UPI app (Google Pay, PhonePe, Paytm, BHIM)
+                      or scan the Cashfree QR. Registration is confirmed <strong>only after</strong> successful backend verification.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/[0.06] pt-3 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-zinc-400">
+                    Amount: <span className="text-white">{formatFee(activeCompetition?.registrationFee)}</span>
+                  </p>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={handleUpiCheckout}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-600/20 hover:brightness-110 disabled:opacity-50"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Opening Cashfree Checkout...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Coins className="h-4 w-4" />
+                        <span>Open Cashfree Checkout</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Cash Option Container */}
+            {paymentOption === 'CASH' && (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold tracking-wider text-emerald-400 uppercase">
+                    Transaction / Receipt Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={cashReference}
+                    onChange={(e) => setCashReference(e.target.value)}
+                    placeholder="e.g. Cash Receipt #104, Desk Handover"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#171717] px-3 text-xs text-white placeholder-zinc-500 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-zinc-400">
+                    Optional reference for admin bookkeeping and receipt logs.
+                  </p>
+                </div>
+
+                {/* Explicit Admin Confirmation Checkbox */}
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5">
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={cashConfirmed}
+                      onChange={(e) => setCashConfirmed(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-white/20 bg-[#171717] text-emerald-500 focus:ring-emerald-500"
+                    />
+                    <div className="text-xs leading-relaxed text-zinc-200">
+                      <span className="font-bold text-white">
+                        Confirm Cash Receipt:{' '}
+                      </span>
+                      I confirm that cash of{' '}
+                      <strong className="text-emerald-400">
+                        {formatFee(activeCompetition?.registrationFee)}
+                      </strong>{' '}
+                      has been received in full from{' '}
+                      <span className="font-semibold text-white">
+                        {participantName}
+                      </span>
+                      .
+                    </div>
+                  </label>
+                </div>
+
+                <div className="border-t border-white/[0.06] pt-3 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-zinc-400">
+                    Status to Record:{' '}
+                    <span className="text-emerald-400 font-bold">PAID</span>
+                  </p>
+                  <button
+                    type="button"
+                    disabled={submitting || !cashConfirmed}
+                    onClick={handleCashPayment}
+                    className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-emerald-500/20 hover:brightness-110 disabled:opacity-40"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Saving Registration...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>Confirm Cash Received &amp; Register</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2 Footer Navigation */}
+            <div className="flex items-center justify-between border-t border-white/[0.08] pt-4">
+              <button
+                type="button"
+                onClick={() => setStep('DETAILS')}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <span>Back to Participant Details</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-400 hover:bg-white/5 hover:text-white"
+              >
+                Cancel
+              </button>
             </div>
           </div>
-
-          {/* Footer Submit */}
-          <div className="flex items-center justify-end gap-3 border-t border-white/[0.08] pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-xl border border-white/10 px-5 py-2.5 text-xs font-bold text-zinc-400 hover:bg-white/5 hover:text-white disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#F15A24]/20 hover:brightness-110 disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Registering...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Save Manual Registration</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+        )}
       </div>
     </div>
   );

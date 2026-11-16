@@ -259,12 +259,15 @@ export async function getPublishedCompetition(req, res, next) {
     }
 
     const prisma = getPrismaClient();
-    const lookup = req.params.id;
+    const lookup = typeof req.params.id === 'string' ? req.params.id.trim() : '';
     const competition = await prisma.competition.findFirst({
       where: {
         isPublished: true,
-        isCompleted: false,
-        OR: [{ id: lookup }, { slug: lookup }],
+        OR: [
+          { id: lookup },
+          { slug: lookup },
+          { slug: lookup.toLowerCase() },
+        ],
       },
       include: {
         categories: {
@@ -570,6 +573,13 @@ export async function retryRegistrationPayment(req, res, next) {
 
     if (!registration || !registration.competition?.isPublished) {
       throw new HttpError(404, 'Registration not found.');
+    }
+
+    if (registration.competition?.isCompleted) {
+      throw new HttpError(
+        400,
+        'This competition has concluded. Payments are no longer accepted.'
+      );
     }
 
     const bodyToken = req.body?.statusToken;

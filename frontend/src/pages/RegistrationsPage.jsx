@@ -438,10 +438,17 @@ export function RegistrationsPage() {
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute top-3 right-3 left-3 flex items-center justify-between gap-2">
                       <span className="rounded-md border border-black/40 bg-black/60 px-2 py-0.5 text-[11px] font-bold tracking-wider text-[#F15A24] uppercase backdrop-blur-md">
                         {comp.competitionType}
                       </span>
+                      {comp.isCompleted ? (
+                        <StatusBadge variant="completed">Completed</StatusBadge>
+                      ) : (
+                        <StatusBadge variant={comp.isPublished ? 'published' : 'draft'}>
+                          {comp.isPublished ? 'Published' : 'Draft'}
+                        </StatusBadge>
+                      )}
                     </div>
                     <div className="absolute right-3 bottom-2.5">
                       <span className="font-display text-base font-extrabold text-[#F15A24] drop-shadow-md">
@@ -643,7 +650,17 @@ export function RegistrationsPage() {
           <button
             type="button"
             onClick={() => setManualModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-4 py-2 text-xs font-bold text-white shadow-md shadow-[#F15A24]/20 hover:brightness-110"
+            disabled={activeCompetition?.isCompleted}
+            title={
+              activeCompetition?.isCompleted
+                ? 'Manual registration is closed because this competition is completed.'
+                : 'Manual Registration'
+            }
+            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              activeCompetition?.isCompleted
+                ? 'cursor-not-allowed border border-white/10 bg-white/5 text-zinc-500 opacity-60'
+                : 'bg-gradient-to-r from-[#F15A24] to-[#E94B16] text-white shadow-md shadow-[#F15A24]/20 hover:brightness-110'
+            }`}
           >
             <UserPlus className="h-3.5 w-3.5" />
             <span>Manual Registration</span>
@@ -680,9 +697,19 @@ export function RegistrationsPage() {
                 {activeCompetition?.competitionType}
               </span>
               <StatusBadge
-                variant={activeCompetition?.isPublished ? 'published' : 'draft'}
+                variant={
+                  activeCompetition?.isCompleted
+                    ? 'completed'
+                    : activeCompetition?.isPublished
+                      ? 'published'
+                      : 'draft'
+                }
               >
-                {activeCompetition?.isPublished ? 'Published' : 'Draft'}
+                {activeCompetition?.isCompleted
+                  ? 'Completed'
+                  : activeCompetition?.isPublished
+                    ? 'Published'
+                    : 'Draft'}
               </StatusBadge>
             </div>
             <h2 className="font-display mt-1 text-2xl font-extrabold tracking-wide text-white uppercase sm:text-3xl">
@@ -749,6 +776,15 @@ export function RegistrationsPage() {
           </div>
         </div>
       </section>
+
+      {activeCompetition?.isCompleted && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs text-blue-200">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-400" />
+          <span>
+            This competition is marked as <strong>Completed</strong>. Manual registrations and new payments are closed. All participant records and payment history remain available below.
+          </span>
+        </div>
+      )}
 
       {/* Filter Toolbar */}
       <section className="rounded-2xl border border-white/[0.08] bg-[#171717] p-4 shadow-sm space-y-3">

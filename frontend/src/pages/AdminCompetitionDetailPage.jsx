@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -57,6 +57,11 @@ export function AdminCompetitionDetailPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingCompetition, setDeletingCompetition] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  // Direct Photo Upload
+  const directPhotoInputRef = useRef(null);
+  const [uploadingDirectPhotos, setUploadingDirectPhotos] = useState(false);
 
   // Registrations tab filters
   const [regSearch, setRegSearch] = useState('');
@@ -135,12 +140,14 @@ export function AdminCompetitionDetailPage() {
   const handleDeleteCompetition = async () => {
     setDeletingCompetition(true);
     setError('');
+    setDeleteError('');
     try {
       await apiClient.deleteCompetition(accessToken, competition.id);
       navigate('/admin/competitions');
     } catch (err) {
-      setError(err.message || 'Failed to delete competition.');
-      setConfirmDeleteOpen(false);
+      const msg = err.message || 'Failed to delete competition.';
+      setError(msg);
+      setDeleteError(msg);
     } finally {
       setDeletingCompetition(false);
     }
@@ -218,6 +225,50 @@ export function AdminCompetitionDetailPage() {
       setError(err.message || 'Failed to update completion status.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDirectPhotoSelect = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !competition?.id || !accessToken) return;
+
+    // Filter valid image types and size <= 5MB
+    const valid = files.filter((f) => {
+      const isImg = ['image/jpeg', 'image/png', 'image/webp'].includes(f.type);
+      const isSize = f.size <= 5 * 1024 * 1024;
+      return isImg && isSize;
+    });
+
+    if (valid.length === 0) {
+      setError('Please select valid JPEG, PNG, or WebP images under 5 MB each.');
+      if (directPhotoInputRef.current) directPhotoInputRef.current.value = '';
+      return;
+    }
+
+    setUploadingDirectPhotos(true);
+    setError('');
+    try {
+      const res = await apiClient.uploadCompetitionPhotos(
+        accessToken,
+        competition.id,
+        valid,
+        ''
+      );
+      const updatedPhotos = res.photos || [];
+      setCompetition((prev) => ({
+        ...prev,
+        photos: updatedPhotos,
+      }));
+      setTab('gallery');
+      setSuccessMsg(`${valid.length} photo(s) uploaded successfully!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setError(err.message || 'Failed to upload event photos.');
+    } finally {
+      setUploadingDirectPhotos(false);
+      if (directPhotoInputRef.current) {
+        directPhotoInputRef.current.value = '';
+      }
     }
   };
 
@@ -413,15 +464,33 @@ export function AdminCompetitionDetailPage() {
 
         {/* State-Sensitive Actions */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Upload Event Photos */}
+          {/* Direct Upload Event Photos */}
           <button
             type="button"
-            onClick={() => setTab('gallery')}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110"
+            onClick={() => directPhotoInputRef.current?.click()}
+            disabled={uploadingDirectPhotos || actionLoading}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110 disabled:opacity-50"
           >
-            <Upload className="h-3.5 w-3.5" />
-            <span>Upload Photos</span>
+            {uploadingDirectPhotos ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Uploading...</span>
+              </>
+            ) : (
+              <>
+                <Upload className="h-3.5 w-3.5" />
+                <span>Upload Photos</span>
+              </>
+            )}
           </button>
+          <input
+            ref={directPhotoInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleDirectPhotoSelect}
+            className="hidden"
+          />
 
           {/* Edit Competition */}
           <button
@@ -502,16 +571,38 @@ export function AdminCompetitionDetailPage() {
               : 'Mark as Completed'}
           </button>
 
-          {/* Delete Competition */}
-          <button
-            type="button"
-            onClick={() => setConfirmDeleteOpen(true)}
-            disabled={actionLoading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-          >
-            <Trash2 className="h-3.5 w-3.5 text-red-400" />
-            Delete
-          </button>
+          {/* Delete Competition - Available only when not completed */}
+          {!competition.isCompleted && (
+            <div className="relative group/detail-delete">
+              <button
+                type="button"
+                onClick={() => {
+                  if (stats.total > 0) return;
+                  setDeleteError('');
+                  setConfirmDeleteOpen(true);
+                }}
+                disabled={actionLoading || stats.total > 0}
+                title={
+                  stats.total > 0
+                    ? 'This competition cannot be deleted because participant registrations exist.'
+                    : 'Delete competition'
+                }
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
+                  stats.total > 0
+                    ? 'cursor-not-allowed border-white/5 bg-white/5 text-zinc-500 opacity-50'
+                    : 'border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20'
+                }`}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                Delete
+              </button>
+              {stats.total > 0 && (
+                <div className="pointer-events-none absolute right-0 top-full mt-1.5 hidden w-64 rounded-lg border border-amber-500/30 bg-[#171717] p-2 text-[10px] leading-tight text-amber-200 shadow-xl group-hover/detail-delete:block z-30">
+                  This competition cannot be deleted because participant registrations exist.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1111,54 +1202,96 @@ export function AdminCompetitionDetailPage() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
         >
           <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#171717] p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-red-400">
+            <div className="flex items-center gap-3">
               <div className="rounded-xl bg-red-500/10 p-2.5">
-                <Trash2 className="h-6 w-6" />
+                {stats.total > 0 ? (
+                  <AlertCircle className="h-6 w-6 text-amber-400" />
+                ) : (
+                  <Trash2 className="h-6 w-6 text-red-400" />
+                )}
               </div>
               <div>
                 <h3
                   id="delete-dialog-title"
                   className="font-display text-lg font-bold text-white uppercase"
                 >
-                  Delete Competition?
+                  {stats.total > 0 ? 'Deletion Restricted' : 'Delete Competition?'}
                 </h3>
-                <p className="text-xs text-zinc-400">This action cannot be undone.</p>
+                <p className="text-xs text-zinc-400">
+                  {stats.total > 0
+                    ? 'Competitions with participant records cannot be deleted'
+                    : 'This action cannot be undone.'}
+                </p>
               </div>
             </div>
 
-            <p className="text-xs text-[#A1A1AA] leading-relaxed">
-              Are you sure you want to delete <strong className="text-white">"{competition.name}"</strong>?
-              {stats.total > 0 && (
-                <span className="block mt-1.5 text-amber-300">
-                  Note: This competition has {stats.total} registration(s).
-                </span>
-              )}
-            </p>
+            {deleteError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+                {deleteError}
+              </div>
+            )}
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
+            {stats.total > 0 ? (
+              <div className="space-y-3 text-xs text-[#A1A1AA] leading-relaxed">
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-amber-200">
+                  <p className="font-semibold text-amber-300">
+                    This competition cannot be deleted because participant registrations exist.
+                  </p>
+                  <p className="mt-1 text-[11px] text-amber-200/80">
+                    This competition contains <strong className="text-white">{stats.total}</strong> registered participant record{stats.total === 1 ? '' : 's'}. To preserve athlete registrations, category allocations, and payment audit history, competitions with registrations cannot be permanently deleted. Use cancellation or mark as Completed to archive it.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-[#A1A1AA] leading-relaxed">
+                Are you sure you want to permanently delete <strong className="text-white">"{competition.name}"</strong>?
+                This competition has 0 registrations and will be permanently removed along with all its categories and event photos.
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
               <button
                 type="button"
-                onClick={() => setConfirmDeleteOpen(false)}
-                disabled={deletingCompetition}
+                onClick={() => {
+                  setConfirmDeleteOpen(false);
+                  setDeleteError('');
+                }}
+                disabled={deletingCompetition || actionLoading}
                 className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white"
               >
-                Cancel
+                {stats.total > 0 ? 'Close' : 'Cancel'}
               </button>
-              <button
-                type="button"
-                onClick={handleDeleteCompetition}
-                disabled={deletingCompetition}
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-red-500 disabled:opacity-50"
-              >
-                {deletingCompetition ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <span>Delete Competition</span>
-                )}
-              </button>
+
+              {stats.total > 0 ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setConfirmDeleteOpen(false);
+                    await handleToggleCompletion();
+                  }}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#F15A24] px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-[#e04f1b]"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Mark as Completed</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDeleteCompetition}
+                  disabled={deletingCompetition}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-red-500 disabled:opacity-50"
+                >
+                  {deletingCompetition ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete Competition</span>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>

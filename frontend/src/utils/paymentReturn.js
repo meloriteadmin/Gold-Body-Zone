@@ -47,7 +47,7 @@ export async function verifyReturnedOrder({
     }
 
     const isConfirmed =
-      registration?.paymentStatus === 'PAID' ||
+      registration?.paymentStatus === 'PAID' &&
       registration?.registrationStatus === 'CONFIRMED';
 
     if (isConfirmed) {
@@ -64,7 +64,7 @@ export async function verifyReturnedOrder({
         status: 'failed',
         registration,
         statusToken,
-        error: '',
+        error: 'Payment not completed. Please retry to confirm your registration.',
       };
     }
 
@@ -72,7 +72,7 @@ export async function verifyReturnedOrder({
       status: 'pending',
       registration,
       statusToken,
-      error: '',
+      error: 'Payment not completed. Please retry to confirm your registration.',
     };
   } catch (err) {
     return {
@@ -80,7 +80,8 @@ export async function verifyReturnedOrder({
       registration: null,
       statusToken: saved?.statusToken || null,
       error:
-        err?.message || 'Unable to verify payment status automatically.',
+        err?.message ||
+        'Payment not completed. Please retry to confirm your registration.',
     };
   }
 }

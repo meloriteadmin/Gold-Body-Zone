@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { env } from '../config/env.js';
 import { apiClient } from '../lib/apiClient.js';
-import { supabase } from '../lib/supabase.js';
+import { purgeSupabaseAuthStorage, supabase } from '../lib/supabase.js';
 import { mapAuthError } from '../utils/authErrors.js';
 
 const AuthContext = createContext(null);
@@ -19,35 +19,49 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState('');
 
-  const verifyAdminSession = useCallback(async (nextSession) => {
-    if (!nextSession?.access_token) {
-      setSession(null);
-      setAdminProfile(null);
-      return null;
-    }
-
+  const purgeStaleSession = useCallback(async () => {
     try {
-      const data = await apiClient.fetchAdminProfile(nextSession.access_token);
-      setSession(nextSession);
-      setAdminProfile(data.profile);
-      setAuthError('');
-      return data.profile;
-    } catch (err) {
-      if (err.status === 403 && supabase) {
-        await supabase.auth.signOut().catch(() => {});
-        setSession(null);
-      } else {
-        setSession(nextSession);
+      if (supabase) {
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       }
-      setAdminProfile(null);
-      const friendlyMessage = mapAuthError(err, {
-        operation: 'session_verify',
-        fallbackMessage: 'Unable to verify admin privileges.',
-      });
-      setAuthError(friendlyMessage);
-      return null;
+    } catch {
+      // Ignore signOut errors
     }
+    purgeSupabaseAuthStorage();
   }, []);
+
+  const verifyAdminSession = useCallback(
+    async (nextSession) => {
+      if (!nextSession?.access_token) {
+        setSession(null);
+        setAdminProfile(null);
+        return null;
+      }
+
+      try {
+        const data = await apiClient.fetchAdminProfile(nextSession.access_token);
+        setSession(nextSession);
+        setAdminProfile(data.profile);
+        setAuthError('');
+        return data.profile;
+      } catch (err) {
+        if (err.status === 401 || err.status === 403) {
+          await purgeStaleSession();
+          setSession(null);
+        } else {
+          setSession(nextSession);
+        }
+        setAdminProfile(null);
+        const friendlyMessage = mapAuthError(err, {
+          operation: 'session_verify',
+          fallbackMessage: 'Unable to verify admin privileges.',
+        });
+        setAuthError(friendlyMessage);
+        return null;
+      }
+    },
+    [purgeStaleSession]
+  );
 
   useEffect(() => {
     let active = true;
@@ -60,14 +74,39 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-
-      if (data?.session) {
-        await verifyAdminSession(data.session);
-      }
-      if (active) {
-        setLoading(false);
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error || !data?.session) {
+          if (error) {
+            await purgeStaleSession();
+          }
+          if (active) {
+            setSession(null);
+            setAdminProfile(null);
+          }
+        } else {
+          // Double-check user validity with Supabase auth server to catch rotated/expired refresh tokens
+          const { data: userData, error: userError } = await supabase.auth.getUser();
+          if (userError || !userData?.user) {
+            await purgeStaleSession();
+            if (active) {
+              setSession(null);
+              setAdminProfile(null);
+            }
+          } else {
+            await verifyAdminSession(data.session);
+          }
+        }
+      } catch {
+        await purgeStaleSession();
+        if (active) {
+          setSession(null);
+          setAdminProfile(null);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
@@ -83,6 +122,7 @@ export function AuthProvider({ children }) {
       async (event, nextSession) => {
         if (!active) return;
         if (event === 'SIGNED_OUT' || !nextSession) {
+          purgeSupabaseAuthStorage();
           setSession(null);
           setAdminProfile(null);
           return;
@@ -97,7 +137,7 @@ export function AuthProvider({ children }) {
       active = false;
       listener?.subscription?.unsubscribe();
     };
-  }, [verifyAdminSession]);
+  }, [verifyAdminSession, purgeStaleSession]);
 
   const signIn = useCallback(async (email, password) => {
     if (!supabase) {
@@ -209,13 +249,11 @@ export function AuthProvider({ children }) {
   }, [adminProfile?.email]);
 
   const signOut = useCallback(async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+    await purgeStaleSession();
     setSession(null);
     setAdminProfile(null);
     setAuthError('');
-  }, []);
+  }, [purgeStaleSession]);
 
   const refreshAdminProfile = useCallback(async () => {
     if (!session?.access_token) return null;

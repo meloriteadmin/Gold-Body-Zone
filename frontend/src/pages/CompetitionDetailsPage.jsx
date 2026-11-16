@@ -408,12 +408,26 @@ export function CompetitionDetailsPage() {
               </p>
             </div>
 
+            {(hasPendingPayment || hasFailedPayment) && (
+              <div className="mt-6 flex items-start gap-3 rounded-2xl border border-[#F15A24]/40 bg-[#F15A24]/10 p-4 text-xs text-white">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
+                <div>
+                  <p className="font-bold text-[#F15A24] uppercase">
+                    Payment Not Completed
+                  </p>
+                  <p className="mt-0.5 text-zinc-300">
+                    Payment not completed. Please retry to confirm your registration.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <button
                 type="button"
                 disabled={
                   isRegisteredAndPaid ||
-                  !registrationPermitted ||
+                  (!registrationPermitted && !hasPendingPayment && !hasFailedPayment) ||
                   retryingPayment
                 }
                 onClick={handleCtaClick}
@@ -426,15 +440,10 @@ export function CompetitionDetailsPage() {
                   </>
                 ) : isRegisteredAndPaid ? (
                   <span>Already Registered</span>
-                ) : hasPendingPayment ? (
-                  <>
-                    <span>Complete Payment</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                ) : hasFailedPayment ? (
+                ) : (hasPendingPayment || hasFailedPayment) ? (
                   <>
                     <span>Retry Payment</span>
-                    <ArrowRight className="h-4 w-4" />
+                    <RefreshCw className="h-4 w-4" />
                   </>
                 ) : competition?.isCompleted ? (
                   <span>Competition Completed</span>

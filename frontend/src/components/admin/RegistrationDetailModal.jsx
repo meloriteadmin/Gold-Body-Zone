@@ -368,14 +368,7 @@ export function RegistrationDetailModal({
               </div>
             </dl>
 
-            <div className="mt-4 flex items-start gap-2 rounded-lg border border-white/[0.06] bg-[#171717] p-3 text-[11px] text-[#A1A1AA]">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
-              <span>
-                Payment status is updated exclusively by verified backend
-                payment checks or signed Cashfree webhooks. Manual overrides are
-                disabled.
-              </span>
-            </div>
+            
           </section>
         </div>
 

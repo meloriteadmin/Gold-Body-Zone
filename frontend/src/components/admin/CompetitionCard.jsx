@@ -1,12 +1,23 @@
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin } from 'lucide-react';
+import { Calendar, MapPin, Trash2 } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge.jsx';
 import { getCompetitionPoster } from '../../utils/competitionHelpers.js';
 import { formatDate, formatFee } from '../../utils/formatters.js';
 
-export function CompetitionCard({ competition, onClick }) {
+export function CompetitionCard({
+  competition,
+  onClick,
+  onDelete,
+  showDelete = false,
+}) {
   const navigate = useNavigate();
   const posterSrc = getCompetitionPoster(competition);
+
+  const regCount =
+    competition.registrationStats?.total ??
+    (competition.registrations || []).length ??
+    0;
+  const hasRegistrations = regCount > 0;
 
   const handleClick = () => {
     if (onClick) {
@@ -81,7 +92,41 @@ export function CompetitionCard({ competition, onClick }) {
         </div>
 
         {/* Card Footer */}
-        <div className="flex items-center justify-end border-t border-white/[0.08] pt-3 text-xs">
+        <div className="flex items-center justify-between border-t border-white/[0.08] pt-3 text-xs">
+          {showDelete && !competition.isCompleted ? (
+            <div className="relative group/delete">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasRegistrations) return;
+                  if (onDelete) onDelete(competition);
+                }}
+                disabled={hasRegistrations}
+                title={
+                  hasRegistrations
+                    ? 'This competition cannot be deleted because participant registrations exist.'
+                    : 'Delete this competition'
+                }
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  hasRegistrations
+                    ? 'cursor-not-allowed border border-white/5 bg-white/5 text-zinc-500 opacity-50'
+                    : 'border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300'
+                }`}
+              >
+                <Trash2 className="h-3 w-3" />
+                <span>Delete</span>
+              </button>
+              {hasRegistrations && (
+                <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 hidden w-60 rounded-lg border border-amber-500/30 bg-[#171717] p-2 text-[10px] leading-tight text-amber-200 shadow-xl group-hover/delete:block z-30">
+                  This competition cannot be deleted because participant registrations exist.
+                </div>
+              )}
+            </div>
+          ) : (
+            <span />
+          )}
+
           <span className="font-bold tracking-wider text-[#F15A24] uppercase text-[11px] transition-transform group-hover:translate-x-0.5">
             View Details →
           </span>

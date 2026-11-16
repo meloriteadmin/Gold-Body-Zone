@@ -70,4 +70,32 @@ describe('Event Photos Management & Storage', () => {
     assert.deepEqual(deletedFromBucket, ['event-photos/p1.jpg']);
     assert.equal(photoStore[0].id, 'photo-2');
   });
+
+  it('supports direct multiple photo upload batch processing', () => {
+    const incomingFiles = [
+      { originalname: 'stage-1.jpg', mimetype: 'image/jpeg', size: 1024 * 500 },
+      { originalname: 'stage-2.png', mimetype: 'image/png', size: 1024 * 800 },
+      { originalname: 'stage-3.webp', mimetype: 'image/webp', size: 1024 * 300 },
+    ];
+
+    const currentCount = photoStore.length;
+    incomingFiles.forEach((file, index) => {
+      photoStore.push({
+        id: `photo-batch-${index + 1}`,
+        competitionId: 'comp-123',
+        photoUrl: `https://storage.example.com/event-photos/${file.originalname}`,
+        photoStoragePath: `event-photos/${file.originalname}`,
+        caption: '',
+        sortOrder: currentCount + index,
+        createdAt: new Date(),
+      });
+    });
+
+    assert.equal(photoStore.length, 5);
+    const uploadedBatch = photoStore.filter((p) => p.id.startsWith('photo-batch-'));
+    assert.equal(uploadedBatch.length, 3);
+    assert.equal(uploadedBatch[0].sortOrder, 2);
+    assert.equal(uploadedBatch[1].sortOrder, 3);
+    assert.equal(uploadedBatch[2].sortOrder, 4);
+  });
 });

@@ -7,6 +7,9 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import apiRoutes from './routes/index.js';
 import healthRoutes from './routes/health.routes.js';
+import publicRoutes from './routes/public.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
 
 export function createApp() {
   const app = express();
@@ -65,6 +68,11 @@ export function createApp() {
 
   app.use('/health', healthRoutes);
   app.use('/api', apiRoutes);
+
+  // Direct aliases to support callers requesting /public, /admin, or /webhooks directly
+  app.use('/public', publicRoutes);
+  app.use('/admin', adminRoutes);
+  app.use('/webhooks', webhookRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

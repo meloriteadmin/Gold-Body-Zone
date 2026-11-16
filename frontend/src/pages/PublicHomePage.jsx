@@ -236,12 +236,10 @@ export function PublicHomePage() {
                 <Award className="h-5 w-5" />
               </div>
               <h2 className="font-display mt-5 text-2xl font-bold tracking-wide text-white uppercase">
-                Structured Divisions
+                Multiple Competition Divisions
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-[#A1A1AA]">
-                Compete across Bodybuilding, Men&apos;s Physique, Masters, and
-                sanctioned divisions with clearly published class rules.
-              </p>
+Compete in Bodybuilding, Men's Physique, Masters and Women's categories.              </p>
             </div>
 
             <div className="rounded-2xl border border-white/[0.07] bg-[#222222] p-7 transition-colors hover:border-[#F15A24]/40">
@@ -249,12 +247,10 @@ export function PublicHomePage() {
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <h2 className="font-display mt-5 text-2xl font-bold tracking-wide text-white uppercase">
-                Verified Eligibility
+               Category-Based Eligibility
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-[#A1A1AA]">
-                Category options automatically filter by gender, competition
-                rules, and age criteria before submission.
-              </p>
+Choose eligible categories based on age, gender and competition rules.              </p>
             </div>
 
             <div className="rounded-2xl border border-white/[0.07] bg-[#222222] p-7 transition-colors hover:border-[#F15A24]/40">
@@ -262,12 +258,10 @@ export function PublicHomePage() {
                 <ClipboardCheck className="h-5 w-5" />
               </div>
               <h2 className="font-display mt-5 text-2xl font-bold tracking-wide text-white uppercase">
-                Direct Entry Tracking
+                Registration Confirmation & Tracking
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-[#A1A1AA]">
-                Every submission receives an official Registration ID tracked
-                inside your private My Registrations portal.
-              </p>
+Get a unique Registration ID and track your entries through the My Registrations portal.              </p>
             </div>
           </div>
         </div>

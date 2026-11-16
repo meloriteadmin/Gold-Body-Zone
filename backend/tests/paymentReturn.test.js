@@ -58,8 +58,58 @@ describe('Cashfree Return URL Verification Flow', () => {
     });
 
     assert.equal(result.status, 'pending');
-    assert.equal(result.error, '');
+    assert.equal(
+      result.error,
+      'Payment not completed. Please retry to confirm your registration.'
+    );
     assert.equal(result.registration.paymentStatus, 'PENDING');
+  });
+
+  it('does NOT confirm registration if paymentStatus is not PAID', async () => {
+    const result = await verifyReturnedOrder({
+      orderId: 'order_cf_unpaid',
+      readCheckoutSession: () => ({ statusToken: 'tok_unpaid' }),
+      saveCheckoutSession: () => {},
+      verifyOrderPayment: async () => ({
+        verified: false,
+        statusToken: 'tok_unpaid',
+        registration: {
+          id: 'reg-102',
+          paymentStatus: 'PENDING',
+          registrationStatus: 'CONFIRMED', // spoofed/anomalous status without payment
+        },
+      }),
+    });
+
+    assert.notEqual(result.status, 'confirmed');
+    assert.equal(result.status, 'pending');
+    assert.equal(
+      result.error,
+      'Payment not completed. Please retry to confirm your registration.'
+    );
+  });
+
+  it('returns failed state when paymentStatus is FAILED', async () => {
+    const result = await verifyReturnedOrder({
+      orderId: 'order_cf_failed',
+      readCheckoutSession: () => ({ statusToken: 'tok_failed' }),
+      saveCheckoutSession: () => {},
+      verifyOrderPayment: async () => ({
+        verified: false,
+        statusToken: 'tok_failed',
+        registration: {
+          id: 'reg-103',
+          paymentStatus: 'FAILED',
+          registrationStatus: 'PENDING',
+        },
+      }),
+    });
+
+    assert.equal(result.status, 'failed');
+    assert.equal(
+      result.error,
+      'Payment not completed. Please retry to confirm your registration.'
+    );
   });
 
   it('returns error state with useful message when verification fails or times out', async () => {

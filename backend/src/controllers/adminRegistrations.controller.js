@@ -315,7 +315,20 @@ export async function createManualRegistration(req, res, next) {
       throw new HttpError(404, 'Competition not found.');
     }
 
-    const VALID_MANUAL_PAYMENT_METHODS = new Set(['CASH', 'UPI', 'PENDING']);
+    if (competition.isCompleted) {
+      throw new HttpError(
+        400,
+        'Cannot create manual registration for a completed competition.'
+      );
+    }
+
+    const VALID_MANUAL_PAYMENT_METHODS = new Set([
+      'CASH',
+      'UPI',
+      'PENDING',
+      'OFFLINE',
+      'ONLINE',
+    ]);
     const rawMethod =
       typeof req.body?.paymentMethod === 'string'
         ? req.body.paymentMethod.trim().toUpperCase()
@@ -323,7 +336,7 @@ export async function createManualRegistration(req, res, next) {
     if (!VALID_MANUAL_PAYMENT_METHODS.has(rawMethod)) {
       throw new HttpError(
         400,
-        'Invalid payment method. Expected Cash, UPI, or Pending.'
+        'Invalid payment method. Expected Cash, UPI, Offline, Online, or Pending.'
       );
     }
 
@@ -374,21 +387,97 @@ export async function createManualRegistration(req, res, next) {
       );
     }
 
-    const registrationCode = generateRegistrationCode();
+    const registrationCode = existing?.registrationCode || generateRegistrationCode();
 
-    const isPaid = rawMethod === 'CASH';
-    const regStatus = isPaid ? 'CONFIRMED' : 'PENDING';
-    const payStatus = isPaid ? 'PAID' : 'PENDING';
-    const cashfreeOrderId = rawMethod === 'UPI' ? buildCashfreeOrderId(registrationCode) : null;
-    const verificationSource =
-      rawMethod === 'UPI'
-        ? 'ADMIN_MANUAL_UPI_QR'
+    const isOnline = rawMethod === 'UPI' || rawMethod === 'ONLINE';
+    const isOffline = rawMethod === 'CASH' || rawMethod === 'OFFLINE';
+
+    let isPaid = false;
+    let regStatus = 'PENDING';
+    let payStatus = 'PENDING';
+    let verificationSource = 'ADMIN_MANUAL';
+    let paymentMethodStored = rawMethod;
+
+    if (isOffline) {
+      // Offline payment marked Paid only after admin confirmation
+      isPaid =
+        req.body.offlineConfirmed !== undefined
+          ? Boolean(req.body.offlineConfirmed)
+          : true;
+      regStatus = isPaid ? 'CONFIRMED' : 'PENDING';
+      payStatus = isPaid ? 'PAID' : 'PENDING';
+
+      const refText =
+        typeof req.body.paymentReference === 'string' &&
+        req.body.paymentReference.trim()
+          ? req.body.paymentReference.trim()
+          : '';
+      verificationSource = refText
+        ? (rawMethod === 'CASH' ? `ADMIN_MANUAL (${refText})` : `ADMIN_OFFLINE (${refText})`)
         : 'ADMIN_MANUAL';
+
+      const offType =
+        typeof req.body.offlinePaymentMethod === 'string' &&
+        req.body.offlinePaymentMethod.trim()
+          ? req.body.offlinePaymentMethod.trim()
+          : (rawMethod === 'CASH' ? 'CASH' : 'Cash');
+      paymentMethodStored = rawMethod === 'CASH' && !req.body.offlinePaymentMethod ? 'CASH' : offType;
+    } else if (isOnline) {
+      // Online payment via Cashfree must be verified before marking Confirmed / Paid
+      isPaid = false;
+      regStatus = 'PENDING';
+      payStatus = 'PENDING';
+      verificationSource = 'ADMIN_MANUAL_UPI_QR';
+      paymentMethodStored = 'UPI';
+    } else {
+      isPaid = false;
+      regStatus = 'PENDING';
+      payStatus = 'PENDING';
+      verificationSource = 'ADMIN_MANUAL_PENDING';
+      paymentMethodStored = 'PENDING';
+    }
+
+    const cashfreeOrderId = isOnline
+      ? buildCashfreeOrderId(registrationCode)
+      : null;
 
     const registration = await prisma.$transaction(async (tx) => {
       if (existing) {
         await tx.payment.deleteMany({ where: { registrationId: existing.id } });
-        await tx.registration.delete({ where: { id: existing.id } });
+        return tx.registration.update({
+          where: { id: existing.id },
+          data: {
+            categoryId: targetCategory.id,
+            groupId: targetGroup?.id || null,
+            groupName: targetGroup?.name || null,
+            participantName: validated.participantName,
+            email: validated.email,
+            mobileNumber: validated.mobileNumber,
+            gender: validated.gender,
+            age: validated.age,
+            heightCm: validated.heightCm,
+            weightKg: validated.weightKg,
+            district: validated.district,
+            representingType: validated.representingType,
+            gymName: validated.gymName,
+            registrationStatus: regStatus,
+            paymentStatus: payStatus,
+            isManual: true,
+            paymentMethod: paymentMethodStored,
+            payment: {
+              create: {
+                amount: competition.registrationFee,
+                currency: 'INR',
+                status: payStatus,
+                cashfreeOrderId,
+                paidAt: isPaid ? new Date() : null,
+                verifiedAt: isPaid ? new Date() : null,
+                verificationSource,
+              },
+            },
+          },
+          include: REGISTRATION_INCLUDE,
+        });
       }
 
       return tx.registration.create({
@@ -411,7 +500,7 @@ export async function createManualRegistration(req, res, next) {
           registrationStatus: regStatus,
           paymentStatus: payStatus,
           isManual: true,
-          paymentMethod: rawMethod,
+          paymentMethod: paymentMethodStored,
           payment: {
             create: {
               amount: competition.registrationFee,
@@ -431,14 +520,14 @@ export async function createManualRegistration(req, res, next) {
     if (isPaid) {
       sendRegistrationConfirmationEmail(registration.id).catch((e) => {
         console.warn(
-          `[email] Failed to send confirmation email for manual cash registration ${registration.id}:`,
+          `[email] Failed to send confirmation email for manual registration ${registration.id}:`,
           e.message
         );
       });
     }
 
     let upiQr = null;
-    if (rawMethod === 'UPI') {
+    if (isOnline) {
       if (env.isCashfreeConfigured) {
         try {
           const cfOrder = await createCashfreeOrder({
@@ -463,8 +552,14 @@ export async function createManualRegistration(req, res, next) {
             paymentSessionId: cfOrder.paymentSessionId,
           };
         } catch (cfErr) {
-          await prisma.payment.deleteMany({ where: { registrationId: registration.id } }).catch(() => {});
-          await prisma.registration.delete({ where: { id: registration.id } }).catch(() => {});
+          if (!existing) {
+            await prisma.payment
+              .deleteMany({ where: { registrationId: registration.id } })
+              .catch(() => {});
+            await prisma.registration
+              .delete({ where: { id: registration.id } })
+              .catch(() => {});
+          }
           throw new HttpError(
             cfErr.status || 502,
             `Failed to generate Cashfree UPI QR: ${cfErr.message || 'Payment gateway communication failure.'}`
@@ -473,7 +568,10 @@ export async function createManualRegistration(req, res, next) {
       } else {
         const QRCode = (await import('qrcode')).default;
         const dummyPayload = `upi://pay?pa=cashfree@icici&pn=IRONSTAGE&tr=${cashfreeOrderId}&am=${competition.registrationFee}&cu=INR`;
-        const qrDataUrl = await QRCode.toDataURL(dummyPayload, { margin: 2, width: 320 });
+        const qrDataUrl = await QRCode.toDataURL(dummyPayload, {
+          margin: 2,
+          width: 320,
+        });
         upiQr = {
           orderId: cashfreeOrderId,
           cfPaymentId: null,
@@ -487,6 +585,14 @@ export async function createManualRegistration(req, res, next) {
     res.status(201).json({
       registration: serializeRegistration(registration),
       upiQr,
+      cashfree: isOnline
+        ? {
+            configured: env.isCashfreeConfigured,
+            mode: env.cashfreeEnv,
+            paymentSessionId: upiQr?.paymentSessionId || null,
+            orderId: cashfreeOrderId,
+          }
+        : null,
     });
   } catch (err) {
     next(err);

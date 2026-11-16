@@ -30,6 +30,7 @@ export async function launchCashfreeCheckout({
   orderId,
   statusToken,
   registrationId,
+  redirectTarget = '_modal',
 }) {
   if (!paymentSessionId || !orderId) {
     throw new Error('Cashfree payment session is not available.');
@@ -47,6 +48,6 @@ export async function launchCashfreeCheckout({
 
   return cashfree.checkout({
     paymentSessionId,
-    redirectTarget: '_self',
+    redirectTarget: redirectTarget || '_modal',
   });
 }

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
+  CheckCircle2,
   Loader2,
   Plus,
+  Trash2,
   Trophy,
 } from 'lucide-react';
 import { CompetitionCard } from '../components/admin/CompetitionCard.jsx';
@@ -18,9 +20,15 @@ export function ManageCompetitionsPage() {
   const [competitions, setCompetitions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCompetition, setEditingCompetition] = useState(null);
+
+  // Delete modal state
+  const [competitionToDelete, setCompetitionToDelete] = useState(null);
+  const [deletingCompetition, setDeletingCompetition] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const loadCompetitions = useCallback(async () => {
     setLoading(true);
@@ -94,6 +102,25 @@ export function ManageCompetitionsPage() {
     await loadCompetitions();
   };
 
+  const handleConfirmDelete = async () => {
+    if (!competitionToDelete) return;
+    setDeletingCompetition(true);
+    setDeleteError('');
+    try {
+      await apiClient.deleteCompetition(accessToken, competitionToDelete.id);
+      setSuccessMsg(
+        `Competition "${competitionToDelete.name}" deleted successfully.`
+      );
+      setTimeout(() => setSuccessMsg(''), 4000);
+      setCompetitionToDelete(null);
+      await loadCompetitions();
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete competition.');
+    } finally {
+      setDeletingCompetition(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Header Bar */}
@@ -120,6 +147,16 @@ export function ManageCompetitionsPage() {
           <span>Add Competition</span>
         </button>
       </div>
+
+      {successMsg && (
+        <div
+          role="status"
+          className="flex items-center gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs font-medium text-emerald-200"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {error && (
         <div
@@ -148,8 +185,110 @@ export function ManageCompetitionsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {competitions.map((comp) => (
-            <CompetitionCard key={comp.id} competition={comp} />
+            <CompetitionCard
+              key={comp.id}
+              competition={comp}
+              showDelete={true}
+              onDelete={(c) => {
+                setDeleteError('');
+                setCompetitionToDelete(c);
+              }}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {competitionToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-red-500/30 bg-[#171717] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-red-500/10 p-2.5">
+                {(competitionToDelete.registrationStats?.total ?? 0) > 0 ? (
+                  <AlertCircle className="h-6 w-6 text-amber-400" />
+                ) : (
+                  <Trash2 className="h-6 w-6 text-red-400" />
+                )}
+              </div>
+              <div>
+                <h3
+                  id="delete-dialog-title"
+                  className="font-display text-lg font-bold text-white uppercase"
+                >
+                  {(competitionToDelete.registrationStats?.total ?? 0) > 0
+                    ? 'Deletion Restricted'
+                    : 'Delete Competition?'}
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  {(competitionToDelete.registrationStats?.total ?? 0) > 0
+                    ? 'Competitions with participant records cannot be deleted'
+                    : 'This action cannot be undone.'}
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+                {deleteError}
+              </div>
+            )}
+
+            {(competitionToDelete.registrationStats?.total ?? 0) > 0 ? (
+              <div className="space-y-3 text-xs text-[#A1A1AA] leading-relaxed">
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-amber-200">
+                  <p className="font-semibold text-amber-300">
+                    This competition cannot be deleted because participant registrations exist.
+                  </p>
+                  <p className="mt-1 text-[11px] text-amber-200/80">
+                    This competition contains{' '}
+                    <strong>{competitionToDelete.registrationStats?.total}</strong> registered participant record(s). To preserve athlete records, category allocations, and payment audit history, competitions with registrations cannot be permanently deleted.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-[#A1A1AA] leading-relaxed">
+                Are you sure you want to permanently delete{' '}
+                <strong className="text-white">"{competitionToDelete.name}"</strong>?
+                This competition has 0 registrations and will be permanently removed along with all its categories and event photos.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => {
+                  setCompetitionToDelete(null);
+                  setDeleteError('');
+                }}
+                disabled={deletingCompetition}
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white"
+              >
+                Cancel
+              </button>
+              {(competitionToDelete.registrationStats?.total ?? 0) === 0 && (
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={deletingCompetition}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-red-500 disabled:opacity-50"
+                >
+                  {deletingCompetition ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <span>Delete Competition</span>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

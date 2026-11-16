@@ -344,9 +344,6 @@ export function PublicRegistrationModal({
       });
     }
 
-    if (accessToken) {
-      await refreshRegistrations().catch(() => {});
-    }
     if (onRegistrationUpdated) {
       onRegistrationUpdated(res.registration);
     }
@@ -363,7 +360,7 @@ export function PublicRegistrationModal({
       if (checkoutOutcome?.error) {
         setFormError(
           checkoutOutcome.error.message ||
-            'Payment checkout could not be completed. You can retry payment below.'
+            'Payment not completed. Please retry to confirm your registration.'
         );
       } else if (checkoutOutcome?.paymentDetails && res.cashfree?.orderId) {
         // Verify with backend even after modal completion — never trust frontend payment success alone.
@@ -523,15 +520,10 @@ export function PublicRegistrationModal({
                 <Clock className="mt-0.5 h-6 w-6 shrink-0 text-[#F15A24]" />
                 <div>
                   <h3 className="font-display text-2xl font-bold tracking-wide text-white uppercase">
-                    {paymentResult.registration?.paymentStatus === 'FAILED'
-                      ? 'Payment Failed'
-                      : paymentResult.cashfree?.configured === false
-                        ? 'Registration Saved — Payment Gateway Pending'
-                        : 'Payment Pending Verification'}
+                    Payment Not Completed
                   </h3>
                   <p className="mt-1 text-xs leading-relaxed text-zinc-200">
-                    {paymentResult.cashfree?.message ||
-                      'Registration will be confirmed only after Cashfree payment verification completes.'}
+                    Payment not completed. Please retry to confirm your registration.
                   </p>
                 </div>
               </div>
@@ -611,7 +603,7 @@ export function PublicRegistrationModal({
                     ) : (
                       <RefreshCw className="h-3.5 w-3.5" />
                     )}
-                    Retry Cashfree Payment
+                    <span>Retry Payment</span>
                   </button>
                 )}
 

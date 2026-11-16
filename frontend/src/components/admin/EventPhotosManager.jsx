@@ -25,8 +25,6 @@ export function EventPhotosManager({
 
   const [photos, setPhotos] = useState(initialPhotos || []);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
@@ -50,9 +48,9 @@ export function EventPhotosManager({
     }
   }, [competitionId, initialPhotos, accessToken]);
 
-  const handleFileChange = (e) => {
+  const handleDirectUpload = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    if (!files.length || !competitionId || !accessToken) return;
 
     // Filter valid image types and size under 5MB
     const valid = files.filter((f) => {
@@ -61,6 +59,15 @@ export function EventPhotosManager({
       return isImg && isSize;
     });
 
+    if (valid.length === 0) {
+      setStatusMsg({
+        type: 'error',
+        text: 'Please select valid JPEG, PNG, or WebP images under 5 MB each.',
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     if (valid.length < files.length) {
       setStatusMsg({
         type: 'error',
@@ -68,35 +75,20 @@ export function EventPhotosManager({
       });
     }
 
-    setSelectedFiles((prev) => [...prev, ...valid]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const removeSelectedFile = (index) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFiles.length || !competitionId || !accessToken) return;
-
     setUploading(true);
     setStatusMsg({ type: '', text: '' });
     try {
       const res = await apiClient.uploadCompetitionPhotos(
         accessToken,
         competitionId,
-        selectedFiles,
-        caption
+        valid,
+        ''
       );
       const updatedList = res.photos || [];
       setPhotos(updatedList);
-      setSelectedFiles([]);
-      setCaption('');
       setStatusMsg({
         type: 'success',
-        text: `${selectedFiles.length} photo(s) uploaded successfully!`,
+        text: `${valid.length} photo(s) uploaded successfully!`,
       });
       setTimeout(() => setStatusMsg({ type: '', text: '' }), 4000);
       if (onPhotosUpdated) {
@@ -109,6 +101,9 @@ export function EventPhotosManager({
       });
     } finally {
       setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -158,86 +153,33 @@ export function EventPhotosManager({
             </p>
           </div>
 
-          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-4 py-2 text-xs font-bold text-white uppercase shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110">
-            <Plus className="h-4 w-4" />
-            <span>Select Photos</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-          </label>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-4 py-2 text-xs font-bold text-white uppercase shadow-md shadow-[#F15A24]/20 transition-all hover:brightness-110 disabled:opacity-50"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Uploading...</span>
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" />
+                <span>Upload Photos</span>
+              </>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleDirectUpload}
+            className="hidden"
+          />
         </div>
-
-        {/* Selected Staged Files Preview */}
-        {selectedFiles.length > 0 && (
-          <div className="mt-4 space-y-3 rounded-xl border border-white/10 bg-[#141414] p-4">
-            <div className="flex items-center justify-between text-xs text-zinc-300">
-              <span className="font-semibold">
-                {selectedFiles.length} photo(s) ready to upload:
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedFiles([])}
-                className="text-[11px] text-zinc-500 hover:text-white"
-              >
-                Clear all
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {selectedFiles.map((file, idx) => (
-                <div
-                  key={`${file.name}-${idx}`}
-                  className="group relative flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1 text-xs text-zinc-300"
-                >
-                  <ImageIcon className="h-3.5 w-3.5 text-[#F15A24]" />
-                  <span className="max-w-[140px] truncate">{file.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeSelectedFile(idx)}
-                    className="ml-1 text-zinc-500 hover:text-red-400"
-                    title="Remove"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Optional Caption */}
-            <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-              <input
-                type="text"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="Optional caption for these photos (e.g., Award Ceremony, Stage Poses)..."
-                className="h-9 flex-1 rounded-lg border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
-              />
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={handleUpload}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white uppercase transition-colors hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Uploading...</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-3.5 w-3.5" />
-                    <span>Upload Now</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Status Alert Banner */}
         {statusMsg.text && (
@@ -279,6 +221,15 @@ export function EventPhotosManager({
             <p className="mt-0.5 text-[11px] text-zinc-500">
               Upload event stage photos, awards, and athlete highlights above.
             </p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-4 py-2 text-xs font-bold text-white shadow-md shadow-[#F15A24]/20 hover:brightness-110 disabled:opacity-50"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>Upload Photos</span>
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
