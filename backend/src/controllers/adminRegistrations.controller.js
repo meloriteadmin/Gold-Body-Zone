@@ -4,6 +4,7 @@ import {
   buildCashfreeOrderId,
   createCashfreeOrder,
   createCashfreeUpiQr,
+  createCheckoutStatusToken,
   fetchCashfreeOrderState,
 } from '../services/cashfree.service.js';
 import { sendRegistrationConfirmationEmail } from '../services/email.service.js';
@@ -540,6 +541,17 @@ export async function createManualRegistration(req, res, next) {
     if (isOnline) {
       if (env.isCashfreeConfigured) {
         try {
+          const compRouteKey = encodeURIComponent(
+            competition.slug || competition.id
+          );
+          const cleanAppBase = (
+            env.publicAppUrl || 'https://gold-body-zone.vercel.app'
+          ).replace(/\/+$/, '');
+          const statusToken = createCheckoutStatusToken(
+            registration.id,
+            cashfreeOrderId
+          );
+
           const cfOrder = await createCashfreeOrder({
             orderId: cashfreeOrderId,
             amount: competition.registrationFee,
@@ -547,7 +559,7 @@ export async function createManualRegistration(req, res, next) {
             customerName: registration.participantName,
             customerEmail: registration.email,
             customerPhone: registration.mobileNumber,
-            returnUrl: `${(env.publicAppUrl || 'https://gold-body-zone.vercel.app').replace(/\/+$/, '')}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
+            returnUrl: `${cleanAppBase}/competitions/${compRouteKey}?order_id=${encodeURIComponent(cashfreeOrderId)}&status_token=${encodeURIComponent(statusToken)}`,
           });
 
           const qrRes = await createCashfreeUpiQr({

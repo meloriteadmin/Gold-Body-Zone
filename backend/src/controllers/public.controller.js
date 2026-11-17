@@ -138,19 +138,28 @@ async function initiatePaymentAttemptForRegistration(
     env.publicAppUrl || 'https://gold-body-zone.vercel.app'
   ).replace(/\/+$/, '');
 
-  let returnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id={order_id}`;
+  const orderId = buildCashfreeOrderId(registration.registrationCode);
+  const statusToken = createCheckoutStatusToken(registration.id, orderId);
+
+  let returnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id={order_id}&status_token=${encodeURIComponent(statusToken)}`;
 
   if (customReturnUrl && typeof customReturnUrl === 'string') {
     try {
       const parsed = new URL(customReturnUrl, cleanAppBase);
-      const searchParams = new URLSearchParams(parsed.search);
-      if (!searchParams.has('order_id')) {
-        searchParams.set('order_id', '{order_id}');
+      // Strictly prevent participant return URLs from pointing to admin routes
+      if (!parsed.pathname.startsWith('/admin')) {
+        const searchParams = new URLSearchParams(parsed.search);
+        if (!searchParams.has('order_id')) {
+          searchParams.set('order_id', '{order_id}');
+        }
+        if (!searchParams.has('status_token')) {
+          searchParams.set('status_token', statusToken);
+        }
+        const rawSearch = searchParams
+          .toString()
+          .replace('%7Border_id%7D', '{order_id}');
+        returnUrl = `${cleanAppBase}${parsed.pathname}${rawSearch ? `?${rawSearch}` : ''}`;
       }
-      const rawSearch = searchParams
-        .toString()
-        .replace('%7Border_id%7D', '{order_id}');
-      returnUrl = `${cleanAppBase}${parsed.pathname}${rawSearch ? `?${rawSearch}` : ''}`;
     } catch {
       // Keep default returnUrl if invalid
     }
@@ -158,7 +167,6 @@ async function initiatePaymentAttemptForRegistration(
 
   // Always generate a fresh Cashfree order and session for the payment attempt
   // while reusing the existing registration and database record.
-  const orderId = buildCashfreeOrderId(registration.registrationCode);
   const cfOrder = await createCashfreeOrder({
     orderId,
     amount: feeNumber,
@@ -744,8 +752,14 @@ export async function verifyPublicOrderPayment(req, res, next) {
       throw new HttpError(404, 'Matching payment order not found.');
     }
 
+    const effectiveToken =
+      statusToken ||
+      req.body?.status_token ||
+      req.query?.status_token ||
+      req.query?.statusToken;
+
     const tokenAuthorized = verifyCheckoutStatusToken(
-      statusToken,
+      effectiveToken,
       paymentRecord.registrationId,
       orderId
     );

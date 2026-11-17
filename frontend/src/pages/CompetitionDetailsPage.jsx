@@ -100,7 +100,7 @@ export function CompetitionDetailsPage() {
   }, [loadDetails, id]);
 
   const runReturnVerification = useCallback(
-    async (orderId) => {
+    async (orderId, statusToken = null) => {
       if (!orderId) return;
       setLastReturnOrderId(orderId);
       setVerifyingPayment(true);
@@ -109,6 +109,7 @@ export function CompetitionDetailsPage() {
       try {
         const outcome = await verifyReturnedOrder({
           orderId,
+          statusToken,
           readCheckoutSession,
           saveCheckoutSession,
           verifyOrderPayment: apiClient.verifyOrderPayment,
@@ -133,17 +134,19 @@ export function CompetitionDetailsPage() {
     []
   );
 
-  // Handle return URL from Cashfree Checkout (?order_id=...) safely without cancelling verification on URL cleanup.
+  // Handle return URL from Cashfree Checkout (?order_id=...&status_token=...) safely without cancelling verification on URL cleanup.
   useEffect(() => {
     const orderId = searchParams.get('order_id');
+    const statusToken = searchParams.get('status_token');
     if (!orderId || handledOrdersRef.current.has(orderId)) return;
     handledOrdersRef.current.add(orderId);
 
     const cleanParams = new URLSearchParams(searchParams);
     cleanParams.delete('order_id');
+    cleanParams.delete('status_token');
     setSearchParams(cleanParams, { replace: true });
 
-    runReturnVerification(orderId);
+    runReturnVerification(orderId, statusToken);
   }, [searchParams, setSearchParams, runReturnVerification]);
 
   const groupedCategories = useMemo(

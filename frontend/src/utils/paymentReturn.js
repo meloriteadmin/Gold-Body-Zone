@@ -5,6 +5,7 @@
  */
 export async function verifyReturnedOrder({
   orderId,
+  statusToken: paramStatusToken = null,
   readCheckoutSession,
   saveCheckoutSession,
   verifyOrderPayment,
@@ -21,12 +22,13 @@ export async function verifyReturnedOrder({
   }
 
   const saved = readCheckoutSession ? readCheckoutSession(orderId) : null;
+  const effectiveStatusToken = paramStatusToken || saved?.statusToken || undefined;
 
   try {
     const res = await verifyOrderPayment(
       {
         orderId,
-        statusToken: saved?.statusToken || undefined,
+        statusToken: effectiveStatusToken,
       },
       accessToken
     );

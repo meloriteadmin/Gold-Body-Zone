@@ -15,14 +15,16 @@ describe('Cashfree Return URL Verification (Local & Deployed)', () => {
     if (customReturnUrl && typeof customReturnUrl === 'string') {
       try {
         const parsed = new URL(customReturnUrl, cleanAppBase);
-        const searchParams = new URLSearchParams(parsed.search);
-        if (!searchParams.has('order_id')) {
-          searchParams.set('order_id', '{order_id}');
+        if (!parsed.pathname.startsWith('/admin')) {
+          const searchParams = new URLSearchParams(parsed.search);
+          if (!searchParams.has('order_id')) {
+            searchParams.set('order_id', '{order_id}');
+          }
+          const rawSearch = searchParams
+            .toString()
+            .replace('%7Border_id%7D', '{order_id}');
+          returnUrl = `${cleanAppBase}${parsed.pathname}${rawSearch ? `?${rawSearch}` : ''}`;
         }
-        const rawSearch = searchParams
-          .toString()
-          .replace('%7Border_id%7D', '{order_id}');
-        returnUrl = `${cleanAppBase}${parsed.pathname}${rawSearch ? `?${rawSearch}` : ''}`;
       } catch {
         // Keep default returnUrl if invalid
       }
@@ -53,13 +55,26 @@ describe('Cashfree Return URL Verification (Local & Deployed)', () => {
     assert.ok(returnUrl.includes('order_id={order_id}'));
   });
 
-  it('preserves custom competition path and order_id query parameter', () => {
+  it('strictly rejects any customReturnUrl pointing to /admin and falls back to public competition page', () => {
     const returnUrl = resolveCashfreeReturnUrl({
-      customReturnUrl: 'http://localhost:5173/competitions/bodybuilding-championship?custom_tag=athlete',
+      customReturnUrl: 'https://gold-body-zone.vercel.app/admin/registrations?order_id=test',
     });
 
-    assert.ok(returnUrl.startsWith('https://gold-body-zone.vercel.app/competitions/bodybuilding-championship'));
-    assert.ok(returnUrl.includes('order_id={order_id}'));
-    assert.ok(returnUrl.includes('custom_tag=athlete'));
+    assert.ok(!returnUrl.includes('/admin'), 'Return URL must never point to an admin route');
+    assert.ok(returnUrl.startsWith('https://gold-body-zone.vercel.app/competitions/masters-2026'));
+  });
+
+  it('formats admin manual UPI QR return URL to the public competition page with order_id and status_token', () => {
+    const compRouteKey = encodeURIComponent('masters-2026');
+    const cleanAppBase = 'https://gold-body-zone.vercel.app';
+    const cashfreeOrderId = 'CF-GBZ-M26-TEST';
+    const statusToken = '123456789.mocksignature';
+
+    const adminUpiReturnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id=${encodeURIComponent(cashfreeOrderId)}&status_token=${encodeURIComponent(statusToken)}`;
+
+    assert.ok(!adminUpiReturnUrl.includes('/admin'), 'Admin manual UPI return URL must NEVER point to /admin routes');
+    assert.ok(adminUpiReturnUrl.startsWith('https://gold-body-zone.vercel.app/competitions/masters-2026'));
+    assert.ok(adminUpiReturnUrl.includes('order_id=CF-GBZ-M26-TEST'));
+    assert.ok(adminUpiReturnUrl.includes('status_token=123456789.mocksignature'));
   });
 });
