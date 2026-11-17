@@ -131,7 +131,6 @@ async function initiatePaymentAttemptForRegistration(
     );
   }
 
-  const orderId = buildCashfreeOrderId(registration.registrationCode);
   const compRouteKey = encodeURIComponent(
     competition.slug || competition.id
   );
@@ -157,6 +156,9 @@ async function initiatePaymentAttemptForRegistration(
     }
   }
 
+  // Always generate a fresh Cashfree order and session for the payment attempt
+  // while reusing the existing registration and database record.
+  const orderId = buildCashfreeOrderId(registration.registrationCode);
   const cfOrder = await createCashfreeOrder({
     orderId,
     amount: feeNumber,
@@ -540,8 +542,13 @@ export async function createPublicRegistration(req, res, next) {
       }
     );
 
-    const acknowledgementEmail = await sendRegistrationAcknowledgementEmail(
-      registrationRecord.id
+    sendRegistrationAcknowledgementEmail(registrationRecord.id).catch(
+      (emailErr) => {
+        console.error(
+          `[email] Async acknowledgement email failed for registration ${registrationRecord.id}:`,
+          emailErr?.message || emailErr
+        );
+      }
     );
 
     res.status(existing ? 200 : 201).json({
@@ -549,7 +556,7 @@ export async function createPublicRegistration(req, res, next) {
       registration: serializePublicRegistration(paymentInit.registration),
       cashfree: paymentInit.cashfree,
       statusToken: paymentInit.statusToken,
-      acknowledgementEmail,
+      acknowledgementEmail: { queued: true },
     });
   } catch (err) {
     if (err?.code === 'P2002') {

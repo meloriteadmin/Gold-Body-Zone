@@ -38,7 +38,15 @@ export function createApp() {
         if (!origin) {
           return callback(null, true);
         }
-        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        const isAllowedVercelPreview =
+          typeof origin === 'string' &&
+          /^https:\/\/gold-body-zone(-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+
+        if (
+          allowedOrigins.includes('*') ||
+          allowedOrigins.includes(origin) ||
+          isAllowedVercelPreview
+        ) {
           return callback(null, true);
         }
         return callback(new Error(`CORS origin '${origin}' is not allowed.`));

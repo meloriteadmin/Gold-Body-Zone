@@ -232,6 +232,7 @@ export async function fetchCashfreeOrderState(orderId) {
   return {
     orderId: orderData?.order_id || orderId,
     orderStatus: orderData?.order_status || null,
+    paymentSessionId: orderData?.payment_session_id || null,
     nextStatus,
     cfPaymentId: latestAttempt?.cf_payment_id
       ? String(latestAttempt.cf_payment_id)

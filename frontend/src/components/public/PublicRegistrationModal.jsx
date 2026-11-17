@@ -88,6 +88,7 @@ export function PublicRegistrationModal({
   const [groupId, setGroupId] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [formError, setFormError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -386,7 +387,6 @@ export function PublicRegistrationModal({
   };
 
   const runCashfreeOrStoreResult = async (res) => {
-    setPaymentResult(res);
     if (res?.registration?.id && res?.statusToken) {
       saveCheckoutSession({
         orderId: res.cashfree?.orderId || res.registration.id,
@@ -404,41 +404,81 @@ export function PublicRegistrationModal({
       onRegistrationUpdated(res.registration);
     }
 
-    if (res.cashfree?.configured && res.cashfree?.paymentSessionId) {
-      const checkoutOutcome = await launchCashfreeCheckout({
+    // If already verified or Cashfree is not configured, show result immediately
+    const alreadyPaid =
+      res?.alreadyPaid ||
+      (res?.registration?.paymentStatus === 'PAID' &&
+        res?.registration?.registrationStatus === 'CONFIRMED');
+
+    if (alreadyPaid || !res.cashfree?.configured || !res.cashfree?.paymentSessionId) {
+      setPaymentResult(res);
+      return;
+    }
+
+    // Cashfree is configured: open checkout without showing early failure
+    setFormError('');
+    let checkoutOutcome = null;
+
+    try {
+      checkoutOutcome = await launchCashfreeCheckout({
         mode: res.cashfree.mode,
         paymentSessionId: res.cashfree.paymentSessionId,
         orderId: res.cashfree.orderId,
         statusToken: res.statusToken,
         registrationId: res.registration.id,
       });
+    } catch (launchErr) {
+      console.warn('[checkout] Cashfree launch failed:', launchErr);
+      checkoutOutcome = { error: { message: launchErr?.message } };
+    }
 
-      if (checkoutOutcome?.error) {
-        setFormError(
-          checkoutOutcome.error.message ||
-            'Payment not completed. Please retry to confirm your registration.'
-        );
-      } else if (checkoutOutcome?.paymentDetails && res.cashfree?.orderId) {
-        // Verify with backend even after modal completion — never trust frontend payment success alone.
+    // Verify actual payment status with backend
+    let currentReg = res.registration;
+    let currentStatusToken = res.statusToken;
+
+    if (res.cashfree?.orderId) {
+      try {
         const verifyRes = await apiClient.verifyOrderPayment({
           orderId: res.cashfree.orderId,
           statusToken: res.statusToken,
         });
-        setPaymentResult({
-          registration: verifyRes.registration,
-          cashfree: res.cashfree,
-          statusToken: verifyRes.statusToken,
-        });
-        if (onRegistrationUpdated) {
-          onRegistrationUpdated(verifyRes.registration);
+        if (verifyRes?.registration) {
+          currentReg = verifyRes.registration;
+          currentStatusToken = verifyRes.statusToken || currentStatusToken;
+          if (onRegistrationUpdated) {
+            onRegistrationUpdated(verifyRes.registration);
+          }
         }
+      } catch (verifyErr) {
+        console.warn('[checkout] Server payment verification error:', verifyErr);
       }
+    }
+
+    setPaymentResult({
+      registration: currentReg,
+      cashfree: res.cashfree,
+      statusToken: currentStatusToken,
+    });
+
+    const isPaid = currentReg?.paymentStatus === 'PAID';
+
+    if (isPaid) {
+      setFormError('');
+    } else {
+      const rawMsg = checkoutOutcome?.error?.message || '';
+      let friendlyMsg = 'Payment was not completed. Please retry to confirm your registration.';
+      if (/aborted/i.test(rawMsg) || /cancel/i.test(rawMsg) || /closed/i.test(rawMsg)) {
+        friendlyMsg = 'Payment checkout was closed or cancelled. Please click Retry Payment to complete your registration.';
+      } else if (rawMsg) {
+        friendlyMsg = rawMsg;
+      }
+      setFormError(friendlyMsg);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (submitting) return;
+    if (submitting || checkoutLoading) return;
 
     const errors = validateFields();
     if (Object.keys(errors).length > 0) {
@@ -454,6 +494,7 @@ export function PublicRegistrationModal({
     setFieldErrors({});
     setFormError('');
     setSubmitting(true);
+    let res = null;
     try {
       const payload = {
         competitionId: activeCompetition.id,
@@ -482,8 +523,7 @@ export function PublicRegistrationModal({
             : cleanText(gymNameInput),
       };
 
-      const res = await apiClient.submitPublicRegistration(payload);
-      await runCashfreeOrStoreResult(res);
+      res = await apiClient.submitPublicRegistration(payload);
     } catch (err) {
       const msg = err.message || 'Failed to submit registration.';
       if (
@@ -501,12 +541,23 @@ export function PublicRegistrationModal({
     } finally {
       setSubmitting(false);
     }
+
+    if (res) {
+      setCheckoutLoading(true);
+      try {
+        await runCashfreeOrStoreResult(res);
+      } catch (checkoutErr) {
+        setFormError(checkoutErr?.message || 'Error loading payment gateway.');
+      } finally {
+        setCheckoutLoading(false);
+      }
+    }
   };
 
   const handleRetryOrVerify = async () => {
-    if (!paymentResult?.registration?.id || submitting) return;
+    if (!paymentResult?.registration?.id || submitting || checkoutLoading) return;
     setFormError('');
-    setSubmitting(true);
+    setCheckoutLoading(true);
     try {
       const res = await apiClient.retryRegistrationPayment(
         paymentResult.registration.id,
@@ -516,7 +567,7 @@ export function PublicRegistrationModal({
     } catch (err) {
       setFormError(err.message || 'Unable to initiate payment retry.');
     } finally {
-      setSubmitting(false);
+      setCheckoutLoading(false);
     }
   };
 
@@ -666,16 +717,16 @@ export function PublicRegistrationModal({
                 {!verifiedPaid && paymentResult.cashfree?.configured && (
                   <button
                     type="button"
-                    disabled={submitting}
+                    disabled={submitting || checkoutLoading}
                     onClick={handleRetryOrVerify}
                     className="inline-flex items-center gap-2 rounded-full border border-[#F15A24] bg-[#F15A24]/15 px-5 py-2.5 text-xs font-bold tracking-wider text-white uppercase transition-colors hover:bg-[#F15A24] disabled:opacity-50"
                   >
-                    {submitting ? (
+                    {checkoutLoading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <RefreshCw className="h-3.5 w-3.5" />
                     )}
-                    <span>Retry Payment</span>
+                    <span>{checkoutLoading ? 'Opening Cashfree...' : 'Retry Payment'}</span>
                   </button>
                 )}
 
@@ -696,6 +747,16 @@ export function PublicRegistrationModal({
             className="flex flex-1 flex-col overflow-hidden"
           >
             <div className="flex-1 space-y-5 overflow-y-auto p-5 sm:p-7">
+              {checkoutLoading && (
+                <div
+                  role="status"
+                  className="flex items-center gap-2.5 rounded-xl border border-[#F15A24]/40 bg-[#F15A24]/10 px-4 py-3 text-xs font-medium text-orange-200"
+                >
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#F15A24]" />
+                  <span>Opening secure Cashfree checkout... Please complete your payment in the checkout window.</span>
+                </div>
+              )}
+
               {formError && (
                 <div
                   role="alert"
@@ -1291,7 +1352,7 @@ export function PublicRegistrationModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  disabled={submitting}
+                  disabled={submitting || checkoutLoading}
                   className="h-11 rounded-full border border-white/15 px-5 text-xs font-semibold text-[#A1A1AA] transition-colors hover:border-white/30 hover:text-white disabled:opacity-50"
                 >
                   Cancel
@@ -1300,13 +1361,20 @@ export function PublicRegistrationModal({
                   type="submit"
                   disabled={
                     submitting ||
+                    checkoutLoading ||
                     compatibleCategories.length === 0 ||
                     !ageCheck.eligible
                   }
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 text-xs font-bold tracking-wider text-white uppercase shadow-lg shadow-[#F15A24]/25 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {submitting ? 'Submitting...' : 'Proceed to Payment'}
+                  {(submitting || checkoutLoading) && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {submitting
+                    ? 'Submitting Registration...'
+                    : checkoutLoading
+                      ? 'Opening Cashfree Checkout...'
+                      : 'Proceed to Payment'}
                 </button>
               </div>
             </div>
