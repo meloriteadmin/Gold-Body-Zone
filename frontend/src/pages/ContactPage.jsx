@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
-  Clock,
   Loader2,
   Mail,
   MapPin,
@@ -18,10 +17,6 @@ const CONTACT_INFO = {
   phoneClean: '+919822986005',
   address:
     "4th Floor, Anjaneya Tower, Above Domino's, Opposite Atul Sweets, Upendra Nagar, CIDCO, Nashik, Maharashtra.",
-  hours: [
-    { days: 'Monday – Saturday', time: '6:00 AM – 10:00 PM' },
-    { days: 'Sunday', time: '7:00 AM – 1:00 PM' },
-  ],
 };
 
 export function ContactPage() {
@@ -208,28 +203,6 @@ export function ContactPage() {
                   <p className="mt-1 text-sm leading-relaxed text-zinc-200">
                     {CONTACT_INFO.address}
                   </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Operating Hours Card */}
-            <div className="rounded-2xl border border-white/[0.08] bg-[#171717] p-6">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-400">
-                  <Clock className="h-6 w-6" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
-                    Operating Hours
-                  </p>
-                  <div className="mt-2 space-y-1 text-xs text-zinc-300">
-                    {CONTACT_INFO.hours.map((item, idx) => (
-                      <div key={idx} className="flex justify-between py-0.5">
-                        <span className="text-[#A1A1AA]">{item.days}</span>
-                        <span className="font-semibold text-white">{item.time}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>
