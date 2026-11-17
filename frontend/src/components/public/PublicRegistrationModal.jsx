@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   Building2,
@@ -89,6 +90,7 @@ export function PublicRegistrationModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [formError, setFormError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -381,6 +383,10 @@ export function PublicRegistrationModal({
       if (cleanGym.length < 2 || cleanGym.length > 120) {
         errors.gymName = 'Please enter your Gym Name (minimum 2 characters).';
       }
+    }
+
+    if (!acceptedTerms) {
+      errors.terms = 'Please accept the Terms & Conditions to proceed.';
     }
 
     return errors;
@@ -1335,6 +1341,41 @@ export function PublicRegistrationModal({
                   )}
                 </div>
               </section>
+
+              {/* Section 4: Terms & Conditions Agreement */}
+              <section
+                aria-labelledby="section-terms"
+                className="rounded-2xl border border-white/[0.08] bg-[#222222] p-4 sm:p-5"
+              >
+                <label className="flex cursor-pointer items-start gap-3 select-none">
+                  <input
+                    type="checkbox"
+                    id="reg-terms"
+                    checked={acceptedTerms}
+                    onChange={(e) => {
+                      setAcceptedTerms(e.target.checked);
+                      clearFieldError('terms');
+                    }}
+                    aria-invalid={Boolean(fieldErrors.terms)}
+                    aria-describedby={fieldErrors.terms ? 'err-terms' : undefined}
+                    className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-white/20 bg-[#171717] text-[#F15A24] accent-[#F15A24] focus:ring-[#F15A24] focus:ring-offset-0"
+                  />
+                  <div className="text-xs leading-relaxed text-[#A1A1AA]">
+                    <span>I agree to the </span>
+                    <Link
+                      to="/terms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-[#F15A24] underline hover:text-[#ff672e]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Terms &amp; Conditions
+                    </Link>
+                    <span>. I understand that confirmed registrations cannot be cancelled.</span>
+                  </div>
+                </label>
+                <FieldError id="err-terms" message={fieldErrors.terms} />
+              </section>
             </div>
 
             {/* Sticky Footer */}
@@ -1363,7 +1404,8 @@ export function PublicRegistrationModal({
                     submitting ||
                     checkoutLoading ||
                     compatibleCategories.length === 0 ||
-                    !ageCheck.eligible
+                    !ageCheck.eligible ||
+                    !acceptedTerms
                   }
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-6 text-xs font-bold tracking-wider text-white uppercase shadow-lg shadow-[#F15A24]/25 transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >

@@ -9,20 +9,10 @@ import {
   Trophy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import gymxHeroAthletes from '../assets/gymx-hero-athletes.jpg';
 import dewaliShreePoster from '../assets/images/Dewali Shree 2026 Bodybuilding Poster (1).png';
 import { CompetitionPosterCard } from '../components/public/CompetitionPosterCard.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import './PublicHomeHero.css';
-
-const TICKER_ITEMS = [
-  'BODYBUILDING',
-  "MEN'S PHYSIQUE",
-  'DEAD LIFT',
-  'STRENGTH',
-  'FITNESS',
-  'CHAMPIONSHIP',
-];
 
 const EMBERS = [
   { left: '8%', top: '34%', size: 4, opacity: 0.85 },
@@ -38,23 +28,6 @@ const EMBERS = [
   { left: '46%', top: '78%', size: 3, opacity: 0.55 },
   { left: '61%', top: '74%', size: 4, opacity: 0.6 },
 ];
-
-function FourPointStar({ color = '#090909', stroke = 'none', size = 20 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={color}
-      stroke={stroke}
-      strokeWidth={stroke === 'none' ? 0 : 1.5}
-      aria-hidden="true"
-      style={{ flexShrink: 0 }}
-    >
-      <path d="M12 1.5L14.8 9.2L22.5 12L14.8 14.8L12 22.5L9.2 14.8L1.5 12L9.2 9.2L12 1.5Z" />
-    </svg>
-  );
-}
 
 export function PublicHomePage() {
   const [competitions, setCompetitions] = useState([]);
@@ -126,14 +99,6 @@ export function PublicHomePage() {
           <div className="gymx-smoke-left" />
           <div className="gymx-smoke-right" />
 
-          <div className="gymx-athletes-wrap">
-            <img
-              src={gymxHeroAthletes}
-              alt="Muscular male and female athletes standing back-to-back curling dumbbells"
-              className="gymx-athletes-img"
-            />
-          </div>
-
           <div className="gymx-top-vignette" />
 
           <div className="gymx-embers">
@@ -172,41 +137,6 @@ export function PublicHomePage() {
               loading="eager"
               decoding="async"
             />
-          </div>
-        </div>
-
-        {/* Bottom Overlapping Angled Orange & Grey Ticker Strips */}
-        <div className="gymx-tickers" aria-hidden="true">
-          <div className="gymx-strip gymx-strip-grey">
-            <div className="gymx-strip-track">
-              {[...TICKER_ITEMS, ...TICKER_ITEMS, ...TICKER_ITEMS].map(
-                (term, idx) => (
-                  <span
-                    key={`grey-${idx}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 28 }}
-                  >
-                    <span className="gymx-strip-word-grey">{term}</span>
-                    <FourPointStar color="#f15a24" stroke="#ffffff" size={18} />
-                  </span>
-                )
-              )}
-            </div>
-          </div>
-
-          <div className="gymx-strip gymx-strip-orange">
-            <div className="gymx-strip-track">
-              {[...TICKER_ITEMS, ...TICKER_ITEMS, ...TICKER_ITEMS].map(
-                (term, idx) => (
-                  <span
-                    key={`orange-${idx}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 28 }}
-                  >
-                    <span className="gymx-strip-word-orange">{term}</span>
-                    <FourPointStar color="#090909" size={20} />
-                  </span>
-                )
-              )}
-            </div>
           </div>
         </div>
       </section>

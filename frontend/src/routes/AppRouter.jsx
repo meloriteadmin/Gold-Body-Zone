@@ -17,6 +17,7 @@ import { JudgePlaceholderPage } from '../pages/JudgePlaceholderPage.jsx';
 import { ManageCompetitionsPage } from '../pages/ManageCompetitionsPage.jsx';
 import { PublicHomePage } from '../pages/PublicHomePage.jsx';
 import { RegistrationsPage } from '../pages/RegistrationsPage.jsx';
+import { TermsPage } from '../pages/TermsPage.jsx';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -47,6 +48,8 @@ export function AppRouter() {
           <Route path="/competitions" element={<CompetitionsListPage />} />
           <Route path="/competitions/:id" element={<CompetitionDetailsPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/terms-and-conditions" element={<TermsPage />} />
         </Route>
 
         {/* Separate Protected Admin Portal */}

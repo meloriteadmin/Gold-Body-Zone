@@ -1,7 +1,5 @@
-import gymxHeroAthletes from '../assets/gymx-hero-athletes.jpg';
 import neutralPlaceholderImg from '../assets/neutral-competition-placeholder.svg';
 
-export const HERO_ATHLETES_IMAGE = gymxHeroAthletes;
 export const NEUTRAL_COMPETITION_POSTER = neutralPlaceholderImg;
 
 export const REGISTRATION_CLOSING_SOON_DAYS = 3;

@@ -78,6 +78,12 @@ export function PublicFooter() {
               >
                 Contact Us
               </Link>
+              <Link
+                to="/terms"
+                className="transition-colors hover:text-[#F15A24]"
+              >
+                Terms &amp; Conditions
+              </Link>
             </nav>
           </div>
 
@@ -129,12 +135,15 @@ export function PublicFooter() {
         {/* Bottom Bar: Copyright & Attribution */}
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/[0.08] pt-6 text-xs text-[#A1A1AA] sm:flex-row">
           <p>© {new Date().getFullYear()} GOLD BODY ZONE GYM. All rights reserved.</p>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <Link to="/contact" className="transition-colors hover:text-white">
               Contact Us
             </Link>
             <Link to="/competitions" className="transition-colors hover:text-white">
               Competitions
+            </Link>
+            <Link to="/terms" className="transition-colors hover:text-white">
+              Terms &amp; Conditions
             </Link>
           </div>
         </div>
