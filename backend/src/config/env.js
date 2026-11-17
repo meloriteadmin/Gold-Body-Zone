@@ -16,8 +16,7 @@ export const env = {
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   publicAppUrl:
     process.env.PUBLIC_APP_URL?.trim() ||
-    process.env.CORS_ORIGIN ||
-    'http://localhost:5173',
+    'https://gold-body-zone.vercel.app',
   databaseUrl: process.env.DATABASE_URL?.trim() || '',
   directUrl: process.env.DIRECT_URL?.trim() || '',
   supabaseUrl: process.env.SUPABASE_URL?.trim() || '',

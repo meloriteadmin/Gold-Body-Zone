@@ -179,6 +179,11 @@ export const apiClient = {
       body: payload,
       timeoutMs: 20000,
     }),
+  submitContactEnquiry: (payload) =>
+    request('/public/contact/enquiry', {
+      method: 'POST',
+      body: payload,
+    }),
   fetchMyRegistrations: (token) => {
     const cleanToken = typeof token === 'string' ? token.trim() : '';
     if (

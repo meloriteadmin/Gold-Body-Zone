@@ -509,3 +509,113 @@ export async function sendTestEmail(
     };
   }
 }
+
+/**
+ * Sends a website contact enquiry notification to bodyzone82@gmail.com.
+ * Safely sanitizes input and uses reply-to header so admin can respond directly.
+ */
+export async function sendContactEnquiryEmail(
+  { name, email, phone, subject, message },
+  { transporter: customTransporter } = {}
+) {
+  const transporter = customTransporter || getTransporter();
+  if (!transporter) {
+    const missing = [
+      !env.smtpHost && 'SMTP_HOST',
+      !env.smtpUser && 'SMTP_USER',
+      !env.smtpPass && 'SMTP_PASS',
+      !env.emailFrom && 'EMAIL_FROM',
+    ].filter(Boolean);
+    console.warn(
+      `[email] SMTP is not configured (missing: ${missing.join(', ') || 'SMTP config'}); skipped contact enquiry notification.`
+    );
+    return {
+      sent: false,
+      reason: 'EMAIL_NOT_CONFIGURED',
+      message:
+        'Email service is not currently configured on the server. Please contact us directly at bodyzone82@gmail.com or call +91 9822986005.',
+    };
+  }
+
+  const recipient = 'bodyzone82@gmail.com';
+  const mailSubject = `[Website Enquiry] ${subject} — ${name}`;
+  const timestamp = new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const text = [
+    'NEW WEBSITE ENQUIRY — GOLD BODY ZONE GYM',
+    '========================================',
+    '',
+    `Name:    ${name}`,
+    `Email:   ${email}`,
+    `Phone:   ${phone}`,
+    `Subject: ${subject}`,
+    `Date:    ${timestamp}`,
+    '',
+    'Message:',
+    '--------',
+    message,
+    '',
+    '========================================',
+    'This enquiry was submitted via the GOLD BODY ZONE GYM website contact form.',
+  ].join('\n');
+
+  const html = `
+    <div style="background:#101010;color:#ffffff;font-family:Arial,sans-serif;padding:32px;">
+      <div style="max-width:600px;margin:0 auto;background:#171717;border:1px solid #2a2a2a;border-radius:16px;padding:28px;">
+        <p style="margin:0;color:#F15A24;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
+          GOLD BODY ZONE GYM • Website Enquiry
+        </p>
+        <h1 style="margin:8px 0 16px;font-size:22px;color:#ffffff;">
+          ${escapeHtml(subject)}
+        </h1>
+        <p style="margin:0 0 20px;color:#a1a1aa;font-size:13px;">
+          Received on ${escapeHtml(timestamp)}
+        </p>
+        <table style="width:100%;border-collapse:collapse;background:#222222;border-radius:12px;overflow:hidden;font-size:13px;margin-bottom:20px;">
+          <tr><td style="padding:10px 14px;color:#a1a1aa;width:120px;">From</td><td style="padding:10px 14px;color:#ffffff;font-weight:600;">${escapeHtml(name)}</td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Email</td><td style="padding:10px 14px;color:#ffffff;"><a href="mailto:${escapeHtml(email)}" style="color:#F15A24;text-decoration:none;">${escapeHtml(email)}</a></td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Phone</td><td style="padding:10px 14px;color:#ffffff;"><a href="tel:${escapeHtml(phone)}" style="color:#F15A24;text-decoration:none;">${escapeHtml(phone)}</a></td></tr>
+          <tr><td style="padding:10px 14px;color:#a1a1aa;">Subject</td><td style="padding:10px 14px;color:#ffffff;">${escapeHtml(subject)}</td></tr>
+        </table>
+        <div style="background:#222222;border-radius:12px;padding:16px;border-left:4px solid #F15A24;">
+          <p style="margin:0 0 8px;color:#a1a1aa;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+            Message Content
+          </p>
+          <p style="margin:0;color:#e4e4e7;font-size:14px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(message)}</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: env.emailFrom,
+      to: recipient,
+      replyTo: `${name} <${email}>`,
+      subject: mailSubject,
+      text,
+      html,
+    });
+    return { sent: true };
+  } catch (err) {
+    console.error('[email] Failed sending contact enquiry notification email:', {
+      code: err?.code || null,
+      responseCode: err?.responseCode || null,
+      message: err?.message || String(err),
+    });
+    return {
+      sent: false,
+      reason: 'SEND_FAILED',
+      message:
+        'Failed to deliver enquiry email. Please contact us directly at bodyzone82@gmail.com or call +91 9822986005.',
+    };
+  }
+}

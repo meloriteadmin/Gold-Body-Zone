@@ -25,7 +25,9 @@ export const env = {
   supabaseAnonKey,
   isSupabaseConfigured: Boolean(supabaseUrl && supabaseAnonKey),
   portalName: import.meta.env.VITE_PORTAL_NAME?.trim() || 'GOLD BODY ZONE',
-  contactEmail: import.meta.env.VITE_CONTACT_EMAIL?.trim() || '',
-  contactPhone: import.meta.env.VITE_CONTACT_PHONE?.trim() || '',
-  contactLocation: import.meta.env.VITE_CONTACT_LOCATION?.trim() || '',
+  contactEmail: import.meta.env.VITE_CONTACT_EMAIL?.trim() || 'bodyzone82@gmail.com',
+  contactPhone: import.meta.env.VITE_CONTACT_PHONE?.trim() || '+91 9822986005',
+  contactLocation:
+    import.meta.env.VITE_CONTACT_LOCATION?.trim() ||
+    "4th Floor, Anjaneya Tower, Above Domino's, Opposite Atul Sweets, Upendra Nagar, CIDCO, Nashik, Maharashtra.",
 };

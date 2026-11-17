@@ -7,8 +7,12 @@ import {
   fetchCashfreeOrderState,
   verifyCheckoutStatusToken,
 } from '../services/cashfree.service.js';
-import { sendRegistrationAcknowledgementEmail } from '../services/email.service.js';
+import {
+  sendContactEnquiryEmail,
+  sendRegistrationAcknowledgementEmail,
+} from '../services/email.service.js';
 import { settleVerifiedPayment } from '../services/paymentSettlement.service.js';
+import { checkEnquiryRateLimit } from '../utils/enquiryRateLimiter.js';
 import { HttpError } from '../utils/httpError.js';
 import {
   generateRegistrationCode,
@@ -131,32 +135,23 @@ async function initiatePaymentAttemptForRegistration(
   const compRouteKey = encodeURIComponent(
     competition.slug || competition.id
   );
-  const originBase =
-    requestOrigin &&
-    /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(requestOrigin)
-      ? requestOrigin
-      : env.publicAppUrl.replace(/\/+$/, '');
-  const cleanAppBase = originBase.replace(/\/+$/, '');
+  const cleanAppBase = (
+    env.publicAppUrl || 'https://gold-body-zone.vercel.app'
+  ).replace(/\/+$/, '');
 
   let returnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id={order_id}`;
 
   if (customReturnUrl && typeof customReturnUrl === 'string') {
     try {
       const parsed = new URL(customReturnUrl, cleanAppBase);
-      const appBaseParsed = new URL(cleanAppBase);
-      const isAllowedOrigin =
-        parsed.origin === appBaseParsed.origin ||
-        (parsed.hostname === 'localhost' &&
-          appBaseParsed.hostname === 'localhost') ||
-        (parsed.hostname === '127.0.0.1' &&
-          appBaseParsed.hostname === '127.0.0.1');
-
-      if (isAllowedOrigin) {
-        if (!parsed.searchParams.has('order_id')) {
-          parsed.searchParams.set('order_id', '{order_id}');
-        }
-        returnUrl = parsed.toString().replace('%7Border_id%7D', '{order_id}');
+      const searchParams = new URLSearchParams(parsed.search);
+      if (!searchParams.has('order_id')) {
+        searchParams.set('order_id', '{order_id}');
       }
+      const rawSearch = searchParams
+        .toString()
+        .replace('%7Border_id%7D', '{order_id}');
+      returnUrl = `${cleanAppBase}${parsed.pathname}${rawSearch ? `?${rawSearch}` : ''}`;
     } catch {
       // Keep default returnUrl if invalid
     }
@@ -887,6 +882,101 @@ export async function checkCompetitionRegistration(req, res, next) {
       canRetryPayment,
       registration: serializePublicRegistration(registration),
       statusToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Handles public website contact enquiries.
+ * Validates, sanitizes input, applies spam protection (honeypot + rate limiter),
+ * and dispatches notification email to bodyzone82@gmail.com.
+ */
+export async function submitContactEnquiry(req, res, next) {
+  try {
+    const { name, email, phone, subject, message, hp_website } = req.body || {};
+
+    // 1. Honeypot check (hidden field to trap automated bots)
+    if (hp_website) {
+      return res.status(400).json({
+        success: false,
+        message: 'Spam submission detected.',
+      });
+    }
+
+    // 2. In-memory Rate Limiting per client IP
+    const clientIp =
+      req.ip ||
+      req.headers['x-forwarded-for'] ||
+      req.socket?.remoteAddress ||
+      'unknown';
+    checkEnquiryRateLimit(clientIp);
+
+    // 3. Validation & Sanitization
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+    const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
+    const trimmedSubject = typeof subject === 'string' ? subject.trim() : '';
+    const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+
+    if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 100) {
+      throw new HttpError(
+        400,
+        'Please enter your full name (2 to 100 characters).'
+      );
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail) || trimmedEmail.length > 150) {
+      throw new HttpError(400, 'Please enter a valid email address.');
+    }
+
+    const phoneDigits = trimmedPhone.replace(/\D/g, '');
+    if (!trimmedPhone || phoneDigits.length < 10 || phoneDigits.length > 15) {
+      throw new HttpError(
+        400,
+        'Please enter a valid phone number with at least 10 digits.'
+      );
+    }
+
+    if (!trimmedSubject || trimmedSubject.length < 3 || trimmedSubject.length > 150) {
+      throw new HttpError(
+        400,
+        'Please enter a subject (3 to 150 characters).'
+      );
+    }
+
+    if (!trimmedMessage || trimmedMessage.length < 10 || trimmedMessage.length > 3000) {
+      throw new HttpError(
+        400,
+        'Please enter a message (10 to 3000 characters).'
+      );
+    }
+
+    // 4. Send email notification to bodyzone82@gmail.com
+    const result = await sendContactEnquiryEmail({
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: trimmedPhone,
+      subject: trimmedSubject,
+      message: trimmedMessage,
+    });
+
+    if (!result.sent) {
+      if (result.reason === 'EMAIL_NOT_CONFIGURED') {
+        throw new HttpError(503, result.message);
+      }
+      throw new HttpError(
+        500,
+        result.message || 'Failed to deliver enquiry email.'
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        'Thank you! Your enquiry has been received and our team will get in touch with you shortly.',
     });
   } catch (err) {
     next(err);

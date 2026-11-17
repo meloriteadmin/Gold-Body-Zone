@@ -73,6 +73,19 @@ export function PublicNavbar() {
           >
             Competitions
           </NavLink>
+
+          <NavLink
+            to="/contact"
+            className={({ isActive }) =>
+              `text-sm font-medium transition-colors duration-150 ${
+                isActive
+                  ? 'text-[#E85A1B]'
+                  : 'text-zinc-300 hover:text-white'
+              }`
+            }
+          >
+            Contact
+          </NavLink>
         </nav>
 
         {/* Mobile Menu Trigger */}
@@ -122,6 +135,19 @@ export function PublicNavbar() {
               }
             >
               Competitions
+            </NavLink>
+            <NavLink
+              to="/contact"
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                `rounded-xl px-4 py-3 text-xs font-bold tracking-wider uppercase transition-colors ${
+                  isActive
+                    ? 'bg-[#F15A24]/15 text-[#F15A24]'
+                    : 'text-zinc-300 hover:bg-white/[0.04] hover:text-white'
+                }`
+              }
+            >
+              Contact
             </NavLink>
           </nav>
         </div>

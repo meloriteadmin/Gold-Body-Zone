@@ -130,11 +130,30 @@ async function cashfreeRequest(path, { method = 'GET', body } = {}) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  const data = await response.json().catch(() => null);
+  let data = null;
+  let rawText = '';
+  if (typeof response.text === 'function') {
+    rawText = await response.text().catch(() => '');
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // Non-JSON response
+    }
+  } else if (typeof response.json === 'function') {
+    data = await response.json().catch(() => null);
+  }
+
   if (!response.ok) {
+    const errorMsg =
+      data?.message ||
+      (rawText && (rawText.includes('<HTML') || rawText.includes('<html'))
+        ? `Cashfree gateway error (HTTP ${response.status})`
+        : rawText.slice(0, 150)) ||
+      'Cashfree gateway request failed.';
+
     throw new HttpError(
       response.status >= 500 ? 502 : 400,
-      data?.message || 'Cashfree gateway request failed.'
+      errorMsg
     );
   }
 

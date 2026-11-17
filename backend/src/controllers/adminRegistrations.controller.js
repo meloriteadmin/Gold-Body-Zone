@@ -547,7 +547,7 @@ export async function createManualRegistration(req, res, next) {
             customerName: registration.participantName,
             customerEmail: registration.email,
             customerPhone: registration.mobileNumber,
-            returnUrl: `${env.appBaseUrl || 'https://goldbodyzone.fit'}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
+            returnUrl: `${(env.publicAppUrl || 'https://gold-body-zone.vercel.app').replace(/\/+$/, '')}/admin/registrations?order_id=${encodeURIComponent(cashfreeOrderId)}`,
           });
 
           const qrRes = await createCashfreeUpiQr({

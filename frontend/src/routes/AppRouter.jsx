@@ -10,6 +10,7 @@ import { AdminResetPasswordPage } from '../pages/AdminResetPasswordPage.jsx';
 import { AdminCompetitionDetailPage } from '../pages/AdminCompetitionDetailPage.jsx';
 import { CompetitionDetailsPage } from '../pages/CompetitionDetailsPage.jsx';
 import { CompetitionsListPage } from '../pages/CompetitionsListPage.jsx';
+import { ContactPage } from '../pages/ContactPage.jsx';
 import { DashboardOverviewPage } from '../pages/DashboardOverviewPage.jsx';
 import { HistoryPage } from '../pages/HistoryPage.jsx';
 import { JudgePlaceholderPage } from '../pages/JudgePlaceholderPage.jsx';
@@ -45,6 +46,7 @@ export function AppRouter() {
           <Route path="/" element={<PublicHomePage />} />
           <Route path="/competitions" element={<CompetitionsListPage />} />
           <Route path="/competitions/:id" element={<CompetitionDetailsPage />} />
+          <Route path="/contact" element={<ContactPage />} />
         </Route>
 
         {/* Separate Protected Admin Portal */}
