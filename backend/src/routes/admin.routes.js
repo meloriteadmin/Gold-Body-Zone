@@ -33,7 +33,10 @@ import {
   updateRegistrationStatus,
   verifyRegistrationPayment,
 } from '../controllers/adminRegistrations.controller.js';
-import { requireAdmin } from '../middleware/requireAdmin.js';
+import { requireAdmin, requireSuperAdmin } from '../middleware/requireAdmin.js';
+import { getStorageUsage } from '../controllers/storage.controller.js';
+import { createRefund, listRefunds, reconcileRefunds } from '../controllers/refund.controller.js';
+import { requireNonessentialDatabaseHeadroom } from '../services/storageUsage.service.js';
 import {
   adminGeneralLimiter,
   adminSensitiveLimiter,
@@ -46,19 +49,21 @@ router.use(requireAdmin);
 router.use(adminGeneralLimiter);
 
 router.get('/dashboard', getDashboardOverview);
+router.get('/storage', getStorageUsage);
 
 router.get('/profile', getAdminProfile);
 router.patch('/profile', adminSensitiveLimiter, updateAdminProfile);
 router.post(
   '/profile/avatar',
   adminSensitiveLimiter,
+  requireNonessentialDatabaseHeadroom,
   uploadImageMiddleware.single('avatar'),
   uploadAdminAvatar
 );
 
 router.get('/competitions', listCompetitions);
 router.get('/competitions/:id', getCompetition);
-router.post('/competitions', createCompetition);
+router.post('/competitions', requireNonessentialDatabaseHeadroom, createCompetition);
 router.patch('/competitions/:id', updateCompetition);
 router.delete('/competitions/:id', adminSensitiveLimiter, deleteCompetition);
 router.patch(
@@ -78,6 +83,7 @@ router.patch(
 );
 router.post(
   '/competitions/:id/poster',
+  requireNonessentialDatabaseHeadroom,
   uploadImageMiddleware.single('poster'),
   uploadCompetitionPoster
 );
@@ -90,6 +96,7 @@ router.delete(
 router.get('/competitions/:id/photos', listCompetitionPhotos);
 router.post(
   '/competitions/:id/photos',
+  requireNonessentialDatabaseHeadroom,
   uploadImageMiddleware.array('photos', 20),
   uploadCompetitionPhotos
 );
@@ -99,7 +106,7 @@ router.delete(
   deleteCompetitionPhoto
 );
 
-router.post('/competitions/:id/categories', addCategory);
+router.post('/competitions/:id/categories', requireNonessentialDatabaseHeadroom, addCategory);
 router.patch(
   '/competitions/:id/categories/:categoryId',
   updateCategory
@@ -112,6 +119,7 @@ router.delete(
 
 router.post(
   '/competitions/:id/categories/:categoryId/groups',
+  requireNonessentialDatabaseHeadroom,
   addCategoryGroup
 );
 router.patch(
@@ -142,5 +150,8 @@ router.post(
   adminSensitiveLimiter,
   resendRegistrationConfirmationEmail
 );
+router.get('/registrations/:id/refunds', listRefunds);
+router.post('/registrations/:id/refunds', adminSensitiveLimiter, requireSuperAdmin, createRefund);
+router.post('/registrations/:id/refunds/reconcile', adminSensitiveLimiter, requireSuperAdmin, reconcileRefunds);
 
 export default router;

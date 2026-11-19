@@ -43,7 +43,7 @@ export function useAdminInactivity({
     lastActivityRef.current = Date.now();
     setIsWarningOpen(false);
     setSecondsRemaining(Math.ceil(warningMs / 1000));
-    // Trigger lightweight profile refresh to keep Supabase token active
+    // Refresh the admin profile while the session is active.
     refreshAdminProfile?.().catch(() => {});
   }, [warningMs, refreshAdminProfile]);
 

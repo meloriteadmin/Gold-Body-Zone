@@ -1,4 +1,4 @@
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export const EXPORT_HEADERS = [
   'Sr No',
@@ -112,7 +112,9 @@ function mapRegistrationRow(reg, index, competition) {
 export function generateRegistrationsCsv(competition, registrations = [], _options = {}) {
   const escapeCsv = (val) => {
     if (val === null || val === undefined) return '';
-    const str = String(val);
+    // Spreadsheet apps can evaluate formulas in CSV cells supplied by participants.
+    const raw = String(val);
+    const str = /^[\s\u0000-\u001f]*[=+@-]/.test(raw) ? `'${raw}` : raw;
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
@@ -135,35 +137,20 @@ export function generateRegistrationsCsv(competition, registrations = [], _optio
  * - No metadata, blank rows, or title rows
  * - Exactly N data rows for N registrations
  */
-export function generateRegistrationsExcel(competition, registrations = [], _options = {}) {
+export async function generateRegistrationsExcel(competition, registrations = [], _options = {}) {
   const rows = [EXPORT_HEADERS];
 
   registrations.forEach((reg, index) => {
     rows.push(mapRegistrationRow(reg, index, competition));
   });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Registrations');
+  rows.forEach((row) => ws.addRow(row));
 
   // Set clean column widths
-  ws['!cols'] = [
-    { wch: 8 },  // Sr No
-    { wch: 26 }, // Participant Name
-    { wch: 20 }, // Registration ID
-    { wch: 16 }, // Phone Number
-    { wch: 28 }, // Email
-    { wch: 10 }, // Gender
-    { wch: 26 }, // Competition Name
-    { wch: 24 }, // Category
-    { wch: 18 }, // Group
-    { wch: 22 }, // Registration Date
-    { wch: 18 }, // Source
-    { wch: 18 }, // Payment Method
-    { wch: 16 }, // Payment Status
-    { wch: 18 }, // Registration Status
-    { wch: 12 }, // Fee
-  ];
+  [8, 26, 20, 16, 28, 10, 26, 24, 18, 22, 18, 18, 16, 18, 12]
+    .forEach((width, index) => { ws.getColumn(index + 1).width = width; });
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Registrations');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

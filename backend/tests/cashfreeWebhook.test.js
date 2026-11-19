@@ -66,7 +66,9 @@ function buildInMemoryDb() {
   const prismaMock = {
     payment: {
       async findUnique({ where }) {
-        const record = payments.get(where.cashfreeOrderId);
+        const record = where.cashfreeOrderId
+          ? payments.get(where.cashfreeOrderId)
+          : [...payments.values()].find((payment) => payment.id === where.id);
         if (!record) return null;
         return {
           ...record,
@@ -107,8 +109,9 @@ function buildInMemoryDb() {
         return { count: 0 };
       },
     },
-    async $transaction(operations) {
-      return Promise.all(operations);
+    async $queryRaw() { return [{ id: 'locked' }]; },
+    async $transaction(work) {
+      return work(this);
     },
   };
 
@@ -496,4 +499,5 @@ describe('Cashfree Webhook Integration', () => {
     assert.equal(registration.registrationStatus, 'CANCELLED');
     assert.equal(registration.confirmationEmailSentAt, null);
   });
+
 });

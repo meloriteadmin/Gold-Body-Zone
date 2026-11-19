@@ -129,11 +129,10 @@ export function serializeCompetition(competition, options = {}) {
   };
 }
 
-export function serializeAdminProfile(profile, authUser = null) {
+export function serializeAdminProfile(profile) {
   if (!profile) return null;
   return {
     id: profile.id,
-    authUserId: profile.authUserId,
     email: profile.email,
     fullName: profile.fullName,
     avatarUrl: profile.avatarUrl,
@@ -141,7 +140,6 @@ export function serializeAdminProfile(profile, authUser = null) {
     isActive: profile.isActive,
     createdAt: profile.createdAt.toISOString(),
     updatedAt: profile.updatedAt.toISOString(),
-    lastSignInAt: authUser?.last_sign_in_at || null,
   };
 }
 

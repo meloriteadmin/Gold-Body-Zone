@@ -1,6 +1,6 @@
 /**
  * Standardized user-friendly error messages for administrative authentication.
- * Raw Supabase error messages, stack traces, and internal identifiers are never
+ * Raw error messages, stack traces, and internal identifiers are never
  * exposed directly to end-users.
  */
 export const AUTH_ERROR_MESSAGES = {
@@ -28,9 +28,7 @@ export const OPERATION_FALLBACKS = {
 };
 
 /**
- * Checks whether an error represents a rate limit from Supabase Auth.
- * Supabase GoTrue returns HTTP 429 with codes such as 'over_request_rate_limit',
- * 'rate_limit_exceeded', or messages mentioning request frequency.
+ * Checks whether an error represents an HTTP rate limit.
  *
  * @param {any} error
  * @returns {boolean}
@@ -55,8 +53,7 @@ export function isRateLimitError(error) {
 }
 
 /**
- * Checks whether an error represents a network or connectivity issue reaching Supabase.
- * In Supabase Auth JS, connection issues throw AuthRetryableFetchError, status 0, or fetch failures.
+ * Checks whether an error represents a network or connectivity issue.
  *
  * @param {any} error
  * @returns {boolean}
@@ -86,7 +83,7 @@ export function isNetworkError(error) {
 
 /**
  * Checks whether an error represents invalid login credentials.
- * Supabase GoTrue returns HTTP 400 with code 'invalid_credentials' or 'invalid_grant'.
+ * The API returns HTTP 401 for invalid credentials.
  *
  * @param {any} error
  * @returns {boolean}
@@ -98,7 +95,7 @@ export function isInvalidCredentialsError(error) {
   const message = String(error.message || '').toLowerCase();
 
   return (
-    status === 400 ||
+    status === 401 ||
     code === 'invalid_credentials' ||
     code === 'invalid_grant' ||
     code === 'user_not_found' ||
@@ -112,10 +109,10 @@ export function isInvalidCredentialsError(error) {
 
 /**
  * Maps any authentication error to a clean, user-friendly message.
- * Strictly guarantees that raw Supabase error objects, stack traces, tokens,
+ * Strictly guarantees that raw error objects, stack traces, tokens,
  * or sensitive backend internals are never exposed to the UI.
  *
- * @param {unknown} error - Error thrown by Supabase Auth or API client
+ * @param {unknown} error - Error thrown by the API client
  * @param {object} [options]
  * @param {'login' | 'session_verify' | 'change_password_verify' | 'change_password' | 'password_reset'} [options.operation] - Authentication operation context
  * @param {string} [options.fallbackMessage] - Optional custom fallback message
@@ -152,7 +149,7 @@ export function mapAuthError(error, options = {}) {
     }
   }
 
-  // 1. Rate Limit detection (HTTP 429 or GoTrue rate-limit codes)
+  // 1. Rate limit detection.
   if (isRateLimitError(error)) {
     if (operation === 'password_reset') {
       return AUTH_ERROR_MESSAGES.RATE_LIMITED_REQUESTS;
@@ -160,7 +157,7 @@ export function mapAuthError(error, options = {}) {
     return AUTH_ERROR_MESSAGES.RATE_LIMITED;
   }
 
-  // 2. Network / Offline detection (AuthRetryableFetchError, Failed to fetch, status 0)
+  // 2. Network / offline detection.
   // Must take precedence over credential or fallback evaluation so that network drops
   // during password reset or change password never incorrectly show "Invalid email or password."
   if (isNetworkError(error)) {
@@ -178,7 +175,7 @@ export function mapAuthError(error, options = {}) {
     return AUTH_ERROR_MESSAGES.ACCESS_DENIED;
   }
 
-  // 5. Invalid Credentials (HTTP 400, invalid_credentials, invalid_grant)
+  // 5. Invalid credentials.
   if (isInvalidCredentialsError(error)) {
     if (operation === 'change_password_verify') {
       return AUTH_ERROR_MESSAGES.CURRENT_PASSWORD_INCORRECT;

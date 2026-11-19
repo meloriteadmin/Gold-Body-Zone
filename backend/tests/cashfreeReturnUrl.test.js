@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { env } from '../src/config/env.js';
 
 describe('Cashfree Return URL Verification (Local & Deployed)', () => {
+  env.publicAppUrl = 'https://gold-body-zone.vercel.app';
   const compRouteKey = 'masters-2026';
 
   function resolveCashfreeReturnUrl({ customReturnUrl, requestOrigin } = {}) {
@@ -64,17 +65,15 @@ describe('Cashfree Return URL Verification (Local & Deployed)', () => {
     assert.ok(returnUrl.startsWith('https://gold-body-zone.vercel.app/competitions/masters-2026'));
   });
 
-  it('formats admin manual UPI QR return URL to the public competition page with order_id and status_token', () => {
+  it('formats admin manual UPI QR return URL without exposing checkout credentials', () => {
     const compRouteKey = encodeURIComponent('masters-2026');
     const cleanAppBase = 'https://gold-body-zone.vercel.app';
     const cashfreeOrderId = 'CF-GBZ-M26-TEST';
-    const statusToken = '123456789.mocksignature';
-
-    const adminUpiReturnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id=${encodeURIComponent(cashfreeOrderId)}&status_token=${encodeURIComponent(statusToken)}`;
+    const adminUpiReturnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id=${encodeURIComponent(cashfreeOrderId)}`;
 
     assert.ok(!adminUpiReturnUrl.includes('/admin'), 'Admin manual UPI return URL must NEVER point to /admin routes');
     assert.ok(adminUpiReturnUrl.startsWith('https://gold-body-zone.vercel.app/competitions/masters-2026'));
     assert.ok(adminUpiReturnUrl.includes('order_id=CF-GBZ-M26-TEST'));
-    assert.ok(adminUpiReturnUrl.includes('status_token=123456789.mocksignature'));
+    assert.ok(!adminUpiReturnUrl.includes('status_token='));
   });
 });

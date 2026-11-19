@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import { HttpError } from '../utils/httpError.js';
 
 const activeLimiters = new Set();
@@ -10,11 +9,6 @@ export function _clearRateLimits() {
   for (const limiter of activeLimiters) {
     limiter.clear();
   }
-}
-
-function hashToken(token) {
-  if (!token) return 'anonymous';
-  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 16);
 }
 
 export class InMemoryRateLimiter {
@@ -31,13 +25,9 @@ export class InMemoryRateLimiter {
       keyGenerator ||
       ((req) => {
         const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-        const userIdentifier = req.admin?.id || req.authUser?.id;
+        const userIdentifier = req.admin?.id;
         if (userIdentifier) {
           return `admin:${userIdentifier}:${ip}`;
-        }
-        const authHeader = req.headers.authorization || '';
-        if (authHeader.startsWith('Bearer ')) {
-          return `token:${hashToken(authHeader.slice(7))}:${ip}`;
         }
         return `ip:${ip}`;
       });
@@ -126,4 +116,16 @@ export const adminSensitiveLimiter = new InMemoryRateLimiter({
   max: 30,
   message:
     'Too many sensitive admin operations requested. For security, please wait before retrying.',
+}).middleware();
+
+export const publicMutationLimiter = new InMemoryRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => `public:${req.ip}`,
+}).middleware();
+
+export const publicLookupLimiter = new InMemoryRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => `lookup:${req.ip}`,
 }).middleware();

@@ -63,7 +63,7 @@ export async function getDashboardOverview(req, res, next) {
     );
 
     res.status(200).json({
-      admin: serializeAdminProfile(req.admin, req.authUser),
+      admin: serializeAdminProfile(req.admin),
       stats: {
         totalCompetitions,
         publishedCompetitions,
@@ -80,7 +80,7 @@ export async function getDashboardOverview(req, res, next) {
 export async function getAdminProfile(req, res, next) {
   try {
     res.status(200).json({
-      profile: serializeAdminProfile(req.admin, req.authUser),
+      profile: serializeAdminProfile(req.admin),
     });
   } catch (err) {
     next(err);
@@ -105,7 +105,7 @@ export async function updateAdminProfile(req, res, next) {
     });
 
     res.status(200).json({
-      profile: serializeAdminProfile(updated, req.authUser),
+      profile: serializeAdminProfile(updated),
     });
   } catch (err) {
     next(err);
@@ -126,20 +126,23 @@ export async function uploadAdminAvatar(req, res, next) {
     const prisma = getPrismaClient();
     const previousStoragePath = req.admin.avatarStoragePath;
 
-    const updated = await prisma.adminProfile.update({
-      where: { id: req.admin.id },
-      data: {
-        avatarUrl: publicUrl,
-        avatarStoragePath: storagePath,
-      },
-    });
+    let updated;
+    try {
+      updated = await prisma.adminProfile.update({
+        where: { id: req.admin.id },
+        data: { avatarUrl: publicUrl, avatarStoragePath: storagePath },
+      });
+    } catch (error) {
+      await deleteImageFromBucket(storagePath).catch(() => {});
+      throw error;
+    }
 
     if (previousStoragePath) {
       await deleteImageFromBucket(previousStoragePath);
     }
 
     res.status(200).json({
-      profile: serializeAdminProfile(updated, req.authUser),
+      profile: serializeAdminProfile(updated),
     });
   } catch (err) {
     next(err);
@@ -712,17 +715,10 @@ export async function deleteCompetition(req, res, next) {
 
     const previousStoragePath = existing.posterStoragePath;
 
-    // Clean up event photos from Supabase storage bucket
     const photos = await prisma.competitionPhoto.findMany({
       where: { competitionId: existing.id },
       select: { id: true, photoStoragePath: true },
     });
-    for (const p of photos) {
-      if (p.photoStoragePath) {
-        await deleteImageFromBucket(p.photoStoragePath).catch(() => {});
-      }
-    }
-
     // Delete in safe cascade transaction
     await prisma.$transaction(async (tx) => {
       await tx.competitionPhoto.deleteMany({
@@ -747,6 +743,10 @@ export async function deleteCompetition(req, res, next) {
         where: { id: existing.id },
       });
     });
+
+    for (const p of photos) {
+      if (p.photoStoragePath) await deleteImageFromBucket(p.photoStoragePath).catch(() => {});
+    }
 
     if (previousStoragePath) {
       await safeDeletePosterStorageFile(prisma, previousStoragePath);
@@ -851,18 +851,17 @@ export async function uploadCompetitionPoster(req, res, next) {
 
     const previousStoragePath = existing.posterStoragePath;
 
-    const updated = await prisma.competition.update({
-      where: { id: existing.id },
-      data: {
-        posterUrl: publicUrl,
-        posterStoragePath: storagePath,
-      },
-      include: {
-        categories: {
-          orderBy: { sortOrder: 'asc' },
-        },
-      },
-    });
+    let updated;
+    try {
+      updated = await prisma.competition.update({
+        where: { id: existing.id },
+        data: { posterUrl: publicUrl, posterStoragePath: storagePath },
+        include: { categories: { orderBy: { sortOrder: 'asc' } } },
+      });
+    } catch (error) {
+      await deleteImageFromBucket(storagePath).catch(() => {});
+      throw error;
+    }
 
     if (previousStoragePath && previousStoragePath !== storagePath) {
       await safeDeletePosterStorageFile(prisma, previousStoragePath);
@@ -981,15 +980,18 @@ export async function uploadCompetitionPhotos(req, res, next) {
         file,
         'event-photos'
       );
-      const photo = await prisma.competitionPhoto.create({
-        data: {
-          competitionId: req.params.id,
-          photoUrl: publicUrl,
-          photoStoragePath: storagePath,
-          caption: caption,
-          sortOrder: currentCount + i,
-        },
-      });
+      let photo;
+      try {
+        photo = await prisma.competitionPhoto.create({
+          data: {
+            competitionId: req.params.id, photoUrl: publicUrl,
+            photoStoragePath: storagePath, caption, sortOrder: currentCount + i,
+          },
+        });
+      } catch (error) {
+        await deleteImageFromBucket(storagePath).catch(() => {});
+        throw error;
+      }
       createdPhotos.push(photo);
     }
 
@@ -1033,13 +1035,10 @@ export async function deleteCompetitionPhoto(req, res, next) {
       throw new HttpError(404, 'Photo not found for this competition.');
     }
 
-    if (photo.photoStoragePath) {
-      await deleteImageFromBucket(photo.photoStoragePath);
-    }
-
     await prisma.competitionPhoto.delete({
       where: { id: photo.id },
     });
+    if (photo.photoStoragePath) await deleteImageFromBucket(photo.photoStoragePath);
 
     const remainingPhotos = await prisma.competitionPhoto.findMany({
       where: { competitionId: req.params.id },

@@ -29,7 +29,6 @@ CREATE TABLE "registrations" (
 
     CONSTRAINT "registrations_pkey" PRIMARY KEY ("id")
 );
-
 -- CreateTable
 CREATE TABLE "payments" (
     "id" TEXT NOT NULL,
@@ -86,53 +85,3 @@ ALTER TABLE "registrations" ADD CONSTRAINT "registrations_category_id_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "payments" ADD CONSTRAINT "payments_registration_id_fkey" FOREIGN KEY ("registration_id") REFERENCES "registrations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- Enable Row Level Security (participants & anon have NO direct PostgREST/Realtime read access)
-ALTER TABLE "registrations" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "payments" ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "registrations_admin_select" ON "registrations";
-CREATE POLICY "registrations_admin_select"
-  ON "registrations"
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM "admin_profiles" ap
-      WHERE ap.auth_user_id = auth.uid()::text
-        AND ap.is_active = true
-    )
-  );
-
-DROP POLICY IF EXISTS "payments_admin_select" ON "payments";
-CREATE POLICY "payments_admin_select"
-  ON "payments"
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM "admin_profiles" ap
-      WHERE ap.auth_user_id = auth.uid()::text
-        AND ap.is_active = true
-    )
-  );
-
--- Configure Supabase Realtime publication securely (idempotent)
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_publication_tables
-      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'registrations'
-    ) THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE "registrations";
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_publication_tables
-      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'payments'
-    ) THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE "payments";
-    END IF;
-  END IF;
-END $$;

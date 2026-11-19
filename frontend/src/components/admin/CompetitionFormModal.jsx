@@ -496,7 +496,7 @@ export function CompetitionFormModal({
                       <p className="text-[11px] text-[#A1A1AA]">
                         {posterFile
                           ? `File size: ${(posterFile.size / (1024 * 1024)).toFixed(2)} MB. This image will replace the current poster upon saving.`
-                          : 'Stored in Supabase Storage. You can replace it with a new file or remove it completely.'}
+                          : 'Stored on this server. You can replace it with a new file or remove it completely.'}
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-[#171717] px-3.5 py-2 text-xs font-semibold text-white hover:border-[#F15A24]/50 transition-colors">
@@ -594,7 +594,7 @@ export function CompetitionFormModal({
                         {posterFile
                           ? `File size: ${(posterFile.size / (1024 * 1024)).toFixed(2)} MB. `
                           : ''}
-                        This image will be uploaded automatically to Supabase Storage and saved against this competition.
+                        This image will be uploaded to the server and saved against this competition.
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-[#171717] px-3.5 py-2 text-xs font-semibold text-white hover:border-[#F15A24]/50 transition-colors">

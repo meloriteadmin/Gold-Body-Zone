@@ -81,18 +81,11 @@ describe('Admin Competition Deletion & Safety Constraints', () => {
     assert.equal(categoryGroups.length, 0);
   });
 
-  it('mounts route aliases in Express app so both /public and /api/public are available', () => {
+  it('mounts the canonical /api route', () => {
     const app = createApp();
     const routerLayers = (app.router?.stack || []).filter((l) => l.name === 'router');
 
     const matchesApi = routerLayers.some((l) => Boolean(l.match('/api/public')));
-    const matchesPublic = routerLayers.some((l) => Boolean(l.match('/public/competitions')));
-    const matchesAdmin = routerLayers.some((l) => Boolean(l.match('/admin/competitions')));
-    const matchesWebhooks = routerLayers.some((l) => Boolean(l.match('/webhooks/cashfree')));
-
     assert.ok(matchesApi, 'Should mount /api');
-    assert.ok(matchesPublic, 'Should mount /public alias');
-    assert.ok(matchesAdmin, 'Should mount /admin alias');
-    assert.ok(matchesWebhooks, 'Should mount /webhooks alias');
   });
 });

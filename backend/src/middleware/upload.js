@@ -11,6 +11,9 @@ export const uploadImageMiddleware = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5 MB
+    files: 20,
+    fields: 20,
+    fieldSize: 16 * 1024,
   },
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {

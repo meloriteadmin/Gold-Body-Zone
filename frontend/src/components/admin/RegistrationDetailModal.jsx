@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertCircle,
   CreditCard,
@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge.jsx';
 import { formatDateTime, formatFee } from '../../utils/formatters.js';
+import { apiClient } from '../../lib/apiClient.js';
 
 const REGISTRATION_STATUS_OPTIONS = [
   { value: 'PENDING', label: 'Pending' },
@@ -42,9 +43,24 @@ export function RegistrationDetailModal({
   registration,
   onClose,
   onUpdateStatus,
+  canManageRefunds = false,
 }) {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState('');
+  const [refunds, setRefunds] = useState([]);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundNote, setRefundNote] = useState('');
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+
+  useEffect(() => {
+    if (!registration?.id) return;
+    let active = true;
+    apiClient.fetchRefunds(registration.id)
+      .then((data) => { if (active) setRefunds(data.refunds || []); })
+      .catch(() => { if (active) setRefunds([]); });
+    return () => { active = false; };
+  }, [registration?.id]);
 
   if (!registration) return null;
 
@@ -62,6 +78,33 @@ export function RegistrationDetailModal({
     } finally {
       setUpdatingStatus(false);
     }
+  };
+
+  const submitRefund = async (event) => {
+    event.preventDefault();
+    setError('');
+    setRefundBusy(true);
+    try {
+      await apiClient.requestRefund(registration.id, {
+        requestId, amount: Number(refundAmount), note: refundNote.trim(),
+      });
+      const data = await apiClient.fetchRefunds(registration.id);
+      setRefunds(data.refunds || []);
+      setRequestId(crypto.randomUUID());
+      setRefundAmount('');
+      setRefundNote('');
+    } catch (err) { setError(err.message || 'Refund request failed. Reconcile before retrying.'); }
+    finally { setRefundBusy(false); }
+  };
+
+  const reconcileRefund = async () => {
+    setRefundBusy(true);
+    setError('');
+    try {
+      const data = await apiClient.reconcileRefunds(registration.id);
+      setRefunds(data.refunds || []);
+    } catch (err) { setError(err.message || 'Refund reconciliation failed.'); }
+    finally { setRefundBusy(false); }
   };
 
   return (
@@ -286,6 +329,34 @@ export function RegistrationDetailModal({
               </div>
             </dl>
           </section>
+          {payment?.cashfreeOrderId && (
+            <section className="rounded-xl border border-white/[0.08] bg-[#222222] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-display text-lg font-bold uppercase text-white">Refund history</h3>
+                {canManageRefunds && <button type="button" disabled={refundBusy} onClick={reconcileRefund} className="text-xs font-semibold text-[#F15A24] disabled:opacity-50">Reconcile with Cashfree</button>}
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-zinc-300">
+                {refunds.length ? refunds.map((item) => (
+                  <div key={item.id} className="flex flex-wrap justify-between gap-2 rounded-lg border border-white/10 p-3">
+                    <span>{formatFee(item.amount)} · {item.status}</span>
+                    <span className="font-mono text-xs">{item.cashfreeRefundId}</span>
+                  </div>
+                )) : <p>No refunds recorded.</p>}
+              </div>
+              {canManageRefunds && payment.status === 'PAID' && (
+                <form onSubmit={submitRefund} className="mt-5 space-y-3 border-t border-white/10 pt-4">
+                  <p className="text-xs text-zinc-400">Only super administrators can request a refund. The payment remains paid until Cashfree confirms the full amount was refunded.</p>
+                  <label className="block text-xs text-zinc-300">Refund amount (INR)
+                    <input type="number" min="0.01" max={payment.amount} step="0.01" required value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#171717] p-2 text-white" />
+                  </label>
+                  <label className="block text-xs text-zinc-300">Reason
+                    <input type="text" minLength={5} maxLength={250} required value={refundNote} onChange={(e) => setRefundNote(e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-[#171717] p-2 text-white" />
+                  </label>
+                  <button type="submit" disabled={refundBusy} className="rounded-lg bg-[#F15A24] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{refundBusy ? 'Processing…' : 'Request Cashfree refund'}</button>
+                </form>
+              )}
+            </section>
+          )}
 
           {/* Payment Information (Strictly database-backed, read-only) */}
           <section className="rounded-xl border border-white/[0.08] bg-[#222222] p-5">

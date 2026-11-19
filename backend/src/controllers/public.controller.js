@@ -131,17 +131,54 @@ async function initiatePaymentAttemptForRegistration(
     );
   }
 
+  if (registration.payment?.cashfreeOrderId) {
+    const priorOrderId = registration.payment.cashfreeOrderId;
+    const priorState = await fetchCashfreeOrderState(priorOrderId);
+    if (priorState.nextStatus === 'PAID') {
+      const settled = await settleVerifiedPayment({
+        orderId: priorOrderId,
+        nextStatus: 'PAID',
+        cfPaymentId: priorState.cfPaymentId,
+        paymentAmount: priorState.paymentAmount,
+        paymentTime: priorState.paymentTime,
+        verificationSource: 'CASHFREE_ORDER_VERIFY',
+      });
+      return {
+        registration: settled,
+        cashfree: { configured: true, mode: env.cashfreeEnv, orderId: priorOrderId, paymentSessionId: null },
+        statusToken: createCheckoutStatusToken(registration.id, priorOrderId),
+      };
+    }
+
+    // An order can have several payment attempts. Keep its database mapping so
+    // a delayed webhook cannot be orphaned by a replacement order.
+    if (String(priorState.orderStatus).toUpperCase() === 'ACTIVE' && priorState.paymentSessionId) {
+      return {
+        registration,
+        cashfree: {
+          configured: true,
+          mode: env.cashfreeEnv,
+          orderId: priorOrderId,
+          paymentSessionId: priorState.paymentSessionId,
+          message: null,
+        },
+        statusToken: createCheckoutStatusToken(registration.id, priorOrderId),
+      };
+    }
+
+    throw new HttpError(409, 'The previous payment order has expired. Contact the organizer to reopen payment.');
+  }
+
   const compRouteKey = encodeURIComponent(
     competition.slug || competition.id
   );
-  const cleanAppBase = (
-    env.publicAppUrl || 'https://gold-body-zone.vercel.app'
-  ).replace(/\/+$/, '');
+  const cleanAppBase = env.publicAppUrl.replace(/\/+$/, '');
 
-  const orderId = buildCashfreeOrderId(registration.registrationCode);
-  const statusToken = createCheckoutStatusToken(registration.id, orderId);
+  // One stable order and one Cashfree idempotency key per registration. A
+  // timed-out API call can be retried without creating a second remote order.
+  const orderId = `CF-${registration.id}`;
 
-  let returnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id={order_id}&status_token=${encodeURIComponent(statusToken)}`;
+  let returnUrl = `${cleanAppBase}/competitions/${compRouteKey}?order_id={order_id}`;
 
   if (customReturnUrl && typeof customReturnUrl === 'string') {
     try {
@@ -149,12 +186,9 @@ async function initiatePaymentAttemptForRegistration(
       // Strictly prevent participant return URLs from pointing to admin routes
       if (!parsed.pathname.startsWith('/admin')) {
         const searchParams = new URLSearchParams(parsed.search);
-        if (!searchParams.has('order_id')) {
-          searchParams.set('order_id', '{order_id}');
-        }
-        if (!searchParams.has('status_token')) {
-          searchParams.set('status_token', statusToken);
-        }
+        searchParams.set('order_id', '{order_id}');
+        searchParams.delete('status_token');
+        searchParams.delete('statusToken');
         const rawSearch = searchParams
           .toString()
           .replace('%7Border_id%7D', '{order_id}');
@@ -165,48 +199,76 @@ async function initiatePaymentAttemptForRegistration(
     }
   }
 
-  // Always generate a fresh Cashfree order and session for the payment attempt
-  // while reusing the existing registration and database record.
-  const cfOrder = await createCashfreeOrder({
-    orderId,
-    amount: feeNumber,
-    customerId: registration.registrationCode,
-    customerName: registration.participantName,
-    customerEmail: registration.email,
-    customerPhone: registration.mobileNumber,
-    returnUrl,
-  });
+  const reservation = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${registration.id} FOR UPDATE`;
+    const current = await tx.registration.findUnique({
+      where: { id: registration.id }, include: PUBLIC_REG_INCLUDE,
+    });
+    if (!current) throw new HttpError(404, 'Registration not found.');
+    if (current.paymentStatus === 'REFUNDED' || current.registrationStatus === 'CANCELLED') {
+      throw new HttpError(409, 'This registration cannot start a new payment. Contact the organizer.');
+    }
+    if (current.payment?.cashfreeOrderId || current.paymentStatus === 'PAID') {
+      return { current };
+    }
 
-  await prisma.$transaction([
-    prisma.payment.upsert({
+    let cfOrder;
+    try {
+      cfOrder = await createCashfreeOrder({
+        orderId,
+        idempotencyKey: registration.id,
+        amount: feeNumber,
+        customerId: registration.registrationCode,
+        customerName: current.participantName,
+        customerEmail: current.email,
+        customerPhone: current.mobileNumber,
+        returnUrl,
+      });
+    } catch (createError) {
+      // Cashfree may have created the order before our connection timed out.
+      // Recover the same stable order ID, never issue a new one.
+      const recovered = await fetchCashfreeOrderState(orderId).catch(() => null);
+      if (!recovered?.paymentSessionId || recovered.orderAmount !== feeNumber) throw createError;
+      cfOrder = {
+        orderId: recovered.orderId,
+        paymentSessionId: recovered.paymentSessionId,
+      };
+    }
+    if (cfOrder.orderId !== orderId || !cfOrder.paymentSessionId) {
+      throw new HttpError(502, 'Cashfree did not return the expected payment order. Please retry.');
+    }
+    await tx.payment.upsert({
       where: { registrationId: registration.id },
       create: {
-        registrationId: registration.id,
-        cashfreeOrderId: cfOrder.orderId,
-        cashfreePaymentId: null,
-        amount: feeNumber,
-        currency: 'INR',
-        status: 'PENDING',
-        paidAt: null,
-        verifiedAt: null,
+        registrationId: registration.id, cashfreeOrderId: orderId,
+        amount: feeNumber, currency: 'INR', status: 'PENDING',
         verificationSource: 'CASHFREE_ORDER_CREATE',
       },
       update: {
-        cashfreeOrderId: cfOrder.orderId,
-        cashfreePaymentId: null,
-        amount: feeNumber,
-        currency: 'INR',
-        status: 'PENDING',
-        paidAt: null,
-        verifiedAt: null,
-        verificationSource: 'CASHFREE_ORDER_CREATE',
+        cashfreeOrderId: orderId, amount: feeNumber, currency: 'INR',
+        status: 'PENDING', verificationSource: 'CASHFREE_ORDER_CREATE',
       },
-    }),
-    prisma.registration.update({
-      where: { id: registration.id },
-      data: { paymentStatus: 'PENDING' },
-    }),
-  ]);
+    });
+    await tx.registration.update({
+      where: { id: registration.id }, data: { paymentStatus: 'PENDING' },
+    });
+    return { cfOrder };
+  }, { timeout: 45_000, maxWait: 20_000 });
+
+  if (reservation.current?.paymentStatus === 'PAID') {
+    return {
+      registration: reservation.current,
+      cashfree: { configured: true, mode: env.cashfreeEnv, paymentSessionId: null,
+        orderId: reservation.current.payment?.cashfreeOrderId || null },
+      statusToken: createCheckoutStatusToken(registration.id, reservation.current.payment?.cashfreeOrderId || registration.id),
+    };
+  }
+  if (reservation.current) {
+    return initiatePaymentAttemptForRegistration(prisma, reservation.current, {
+      returnUrl: customReturnUrl, requestOrigin,
+    });
+  }
+  const { cfOrder } = reservation;
 
   const refreshed = await prisma.registration.findUnique({
     where: { id: registration.id },
@@ -448,6 +510,19 @@ export async function createPublicRegistration(req, res, next) {
     });
 
     if (existing) {
+      if (existing.paymentStatus === 'REFUNDED') {
+        throw new HttpError(409, 'This registration was refunded. Contact the organizer for a new payment.');
+      }
+      const existingToken = req.body?.statusToken;
+      const ownsExistingCheckout =
+        verifyCheckoutStatusToken(existingToken, existing.id, existing.id) ||
+        (existing.payment?.cashfreeOrderId &&
+          verifyCheckoutStatusToken(
+            existingToken,
+            existing.id,
+            existing.payment.cashfreeOrderId
+          ));
+
       if (
         existing.paymentStatus === 'PAID' &&
         existing.registrationStatus === 'CONFIRMED'
@@ -455,6 +530,13 @@ export async function createPublicRegistration(req, res, next) {
         throw new HttpError(
           409,
           'This candidate is already registered for this competition.'
+        );
+      }
+
+      if (!ownsExistingCheckout) {
+        throw new HttpError(
+          409,
+          'A registration already exists for this email. Continue from your original checkout session.'
         );
       }
 
@@ -596,6 +678,10 @@ export async function retryRegistrationPayment(req, res, next) {
       throw new HttpError(404, 'Registration not found.');
     }
 
+    if (registration.paymentStatus === 'REFUNDED') {
+      throw new HttpError(409, 'This registration was refunded. Contact the organizer for a new payment.');
+    }
+
     if (registration.competition?.isCompleted) {
       throw new HttpError(
         400,
@@ -642,7 +728,7 @@ export async function retryRegistrationPayment(req, res, next) {
           registration.payment.cashfreeOrderId
         ));
 
-    if (bodyToken && !tokenAuthorized) {
+    if (!tokenAuthorized) {
       throw new HttpError(
         403,
         'Invalid checkout session to retry payment.'
@@ -752,22 +838,14 @@ export async function verifyPublicOrderPayment(req, res, next) {
       throw new HttpError(404, 'Matching payment order not found.');
     }
 
-    const effectiveToken =
-      statusToken ||
-      req.body?.status_token ||
-      req.query?.status_token ||
-      req.query?.statusToken;
+    const effectiveToken = statusToken || req.body?.status_token;
 
     const tokenAuthorized = verifyCheckoutStatusToken(
       effectiveToken,
       paymentRecord.registrationId,
       orderId
     );
-    const jwtAuthorized =
-      Boolean(req.participantEmail) &&
-      req.participantEmail === paymentRecord.registration.email;
-
-    if (!tokenAuthorized && !jwtAuthorized) {
+    if (!tokenAuthorized) {
       throw new HttpError(
         403,
         'Unable to verify this payment without an authorized session.'
@@ -803,17 +881,6 @@ export async function verifyPublicOrderPayment(req, res, next) {
   }
 }
 
-function parseJwtClaimsSafely(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const json = Buffer.from(parts[1], 'base64url').toString('utf8');
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 export async function checkCompetitionRegistration(req, res, next) {
   try {
     if (!env.isDatabaseConfigured) {
@@ -839,40 +906,22 @@ export async function checkCompetitionRegistration(req, res, next) {
       throw new HttpError(404, 'Competition not found.');
     }
 
-    let authEmail = null;
-    const authHeader = req.headers.authorization || '';
-    if (authHeader.startsWith('Bearer ')) {
-      const claims = parseJwtClaimsSafely(authHeader.slice(7).trim());
-      if (claims?.email) {
-        authEmail = claims.email.trim().toLowerCase();
-      }
-    }
-
-    const email = (req.body?.email || req.query.email || authEmail || '')
+    const email = String(req.body?.email || req.query.email || '')
       .trim()
       .toLowerCase();
-    const mobileNumber = String(req.body?.mobileNumber || req.query.mobileNumber || '').trim();
-    const registrationId = String(req.body?.registrationId || req.query.registrationId || '').trim();
+    const statusToken = req.body?.statusToken || req.query.statusToken;
 
-    if (!email && !mobileNumber && !registrationId) {
+    if (!email) {
       return res.status(200).json({
         registered: false,
         registration: null,
       });
     }
 
-    const orConditions = [];
-    if (registrationId) orConditions.push({ id: registrationId });
-    if (email) {
-      orConditions.push({ email });
-    } else if (mobileNumber) {
-      orConditions.push({ mobileNumber });
-    }
-
     const registration = await prisma.registration.findFirst({
       where: {
         competitionId: competition.id,
-        OR: orConditions,
+        email,
         registrationStatus: { not: 'CANCELLED' },
       },
       include: PUBLIC_REG_INCLUDE,
@@ -892,17 +941,28 @@ export async function checkCompetitionRegistration(req, res, next) {
 
     const canRetryPayment = !isPaid && registration.registrationStatus !== 'CANCELLED';
 
-    const statusToken = createCheckoutStatusToken(
-      registration.id,
-      registration.payment?.cashfreeOrderId || registration.id
-    );
+    const tokenAuthorized =
+      verifyCheckoutStatusToken(statusToken, registration.id, registration.id) ||
+      (registration.payment?.cashfreeOrderId &&
+        verifyCheckoutStatusToken(
+          statusToken,
+          registration.id,
+          registration.payment.cashfreeOrderId
+        ));
+
+    if (!tokenAuthorized) {
+      return res.status(200).json({ registered: false, registration: null });
+    }
 
     return res.status(200).json({
       registered: true,
       isPaid,
       canRetryPayment,
       registration: serializePublicRegistration(registration),
-      statusToken,
+      statusToken: createCheckoutStatusToken(
+        registration.id,
+        registration.payment?.cashfreeOrderId || registration.id
+      ),
     });
   } catch (err) {
     next(err);

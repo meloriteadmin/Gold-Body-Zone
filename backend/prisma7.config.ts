@@ -7,7 +7,7 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    // Prefer DIRECT_URL for Prisma CLI migrations against Supabase PostgreSQL.
+    // Use a direct PostgreSQL connection for migrations.
     url: process.env.DIRECT_URL || process.env.DATABASE_URL,
   },
 });

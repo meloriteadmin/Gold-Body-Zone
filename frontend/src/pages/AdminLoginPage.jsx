@@ -12,13 +12,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { mapAuthError } from '../utils/authErrors.js';
+import { apiClient } from '../lib/apiClient.js';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const {
     isAuthenticated,
-    isSupabaseConfigured,
     loading: authLoading,
     authError,
     signIn,
@@ -30,6 +30,7 @@ export function AdminLoginPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   if (!authLoading && isAuthenticated) {
     const redirectTo = location.state?.from || '/admin';
@@ -114,19 +115,6 @@ export function AdminLoginPage() {
             >
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
               <span>{sessionExpiredNotice}</span>
-            </div>
-          )}
-
-          {!isSupabaseConfigured && (
-            <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-[#F15A24]/40 bg-[#F15A24]/10 p-3.5 text-xs text-orange-200">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
-              <span>
-                Supabase Authentication is not yet configured in{' '}
-                <code className="text-white">frontend/.env</code>. Configure{' '}
-                <code className="text-white">VITE_SUPABASE_URL</code> and{' '}
-                <code className="text-white">VITE_SUPABASE_ANON_KEY</code> to
-                enable admin login.
-              </span>
             </div>
           )}
 
@@ -230,6 +218,20 @@ export function AdminLoginPage() {
               )}
             </button>
           </form>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!email.trim()) { setResetMessage('Enter your admin email first.'); return; }
+              try {
+                const result = await apiClient.requestAdminPasswordReset(email.trim());
+                setResetMessage(result.message);
+              } catch (err) { setResetMessage(err.message); }
+            }}
+            className="mt-4 text-sm text-[#F15A24] hover:underline"
+          >
+            Forgot password?
+          </button>
+          {resetMessage && <p role="status" className="mt-2 text-sm text-zinc-300">{resetMessage}</p>}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   EXPORT_HEADERS,
   generateRegistrationsCsv,
@@ -29,6 +29,15 @@ function parseCsvLine(line) {
   }
   result.push(current);
   return result;
+}
+
+async function readExcelRows(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  const rows = [];
+  sheet.eachRow((row) => rows.push(row.values.slice(1)));
+  return rows;
 }
 
 describe('Strict Registration Export Verification (Excel & CSV)', () => {
@@ -110,11 +119,8 @@ describe('Strict Registration Export Verification (Excel & CSV)', () => {
       assert.ok(!csvContent.includes('#'), 'No comment or metadata lines');
     });
 
-    it('exports Excel with Row 1 as headings and exactly 0 data rows', () => {
-      const xlsxBuffer = generateRegistrationsExcel(mockCompetition, []);
-      const wb = XLSX.read(xlsxBuffer, { type: 'buffer' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    it('exports Excel with Row 1 as headings and exactly 0 data rows', async () => {
+      const rows = await readExcelRows(await generateRegistrationsExcel(mockCompetition, []));
 
       assert.equal(rows.length, 1, 'Excel must have exactly 1 row (the header row)');
       assert.deepEqual(rows[0], EXPORT_HEADERS);
@@ -149,11 +155,8 @@ describe('Strict Registration Export Verification (Excel & CSV)', () => {
       assert.equal(dataRow[14], '750'); // Fee (INR)
     });
 
-    it('exports Excel with Row 1 as headings and exactly 1 data row with all 15 columns correctly mapped', () => {
-      const xlsxBuffer = generateRegistrationsExcel(mockCompetition, [sampleReg1]);
-      const wb = XLSX.read(xlsxBuffer, { type: 'buffer' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    it('exports Excel with Row 1 as headings and exactly 1 data row with all 15 columns correctly mapped', async () => {
+      const rows = await readExcelRows(await generateRegistrationsExcel(mockCompetition, [sampleReg1]));
 
       assert.equal(rows.length, 2, 'Excel must have exactly 2 rows: 1 header + 1 data row');
       assert.deepEqual(rows[0], EXPORT_HEADERS);
@@ -209,11 +212,8 @@ describe('Strict Registration Export Verification (Excel & CSV)', () => {
       assert.equal(row2[14], '750');
     });
 
-    it('exports Excel with Row 1 as headings and exactly 2 data rows', () => {
-      const xlsxBuffer = generateRegistrationsExcel(mockCompetition, [sampleReg1, sampleReg2]);
-      const wb = XLSX.read(xlsxBuffer, { type: 'buffer' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    it('exports Excel with Row 1 as headings and exactly 2 data rows', async () => {
+      const rows = await readExcelRows(await generateRegistrationsExcel(mockCompetition, [sampleReg1, sampleReg2]));
 
       assert.equal(rows.length, 3, 'Excel must have exactly 3 rows: 1 header + 2 data rows');
       assert.deepEqual(rows[0], EXPORT_HEADERS);
