@@ -484,7 +484,7 @@ export function RegistrationsPage() {
                   Registration Completed Successfully!
                 </h3>
                 <p className="text-xs text-emerald-400 font-semibold mt-1">
-                  Payment Verified • Confirmation Email Sent
+                  Payment recorded in the admin dashboard
                 </p>
               </div>
 
@@ -1092,7 +1092,7 @@ export function RegistrationsPage() {
                 Registration Completed Successfully!
               </h3>
               <p className="text-xs text-emerald-400 font-semibold mt-1">
-                Payment Verified • Confirmation Email Sent
+                Payment recorded in the admin dashboard
               </p>
             </div>
 

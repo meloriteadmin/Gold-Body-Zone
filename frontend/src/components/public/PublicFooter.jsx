@@ -1,9 +1,8 @@
-import { Mail, MapPin, Phone } from 'lucide-react';
+import { MapPin, Phone } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const FOOTER_CONTACT = {
   businessName: 'GOLD BODY ZONE GYM',
-  email: 'bodyzone82@gmail.com',
   phone: '+91 9822986005',
   phoneClean: '+919822986005',
   address:
@@ -104,20 +103,6 @@ export function PublicFooter() {
                     {FOOTER_CONTACT.phone}
                   </a>
                   <p className="text-[11px] text-zinc-500">Call for enquiries</p>
-                </div>
-              </div>
-
-              {/* Email */}
-              <div className="flex items-start gap-3">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
-                <div>
-                  <a
-                    href={`mailto:${FOOTER_CONTACT.email}`}
-                    className="font-medium break-all text-white transition-colors hover:text-[#F15A24]"
-                  >
-                    {FOOTER_CONTACT.email}
-                  </a>
-                  <p className="text-[11px] text-zinc-500">Official email</p>
                 </div>
               </div>
 

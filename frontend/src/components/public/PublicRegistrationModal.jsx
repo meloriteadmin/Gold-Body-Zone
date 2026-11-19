@@ -719,6 +719,12 @@ export function PublicRegistrationModal({
                   </StatusBadge>
                 </dd>
               </div>
+              {verifiedPaid && paymentResult.registration.payment?.cashfreeOrderId && (
+                <div className="sm:col-span-2">
+                  <dt className="text-[#A1A1AA] uppercase">Payment Reference</dt>
+                  <dd className="mt-1 break-all font-mono text-sm text-white">{paymentResult.registration.payment.cashfreePaymentId || paymentResult.registration.payment.cashfreeOrderId}</dd>
+                </div>
+              )}
             </dl>
 
             <div className="flex flex-wrap items-center justify-between gap-3">

@@ -20,7 +20,6 @@ const apiBaseUrl = normalizeApiBaseUrl(rawApiUrl);
 export const env = {
   apiBaseUrl,
   portalName: import.meta.env.VITE_PORTAL_NAME?.trim() || 'GOLD BODY ZONE',
-  contactEmail: import.meta.env.VITE_CONTACT_EMAIL?.trim() || 'bodyzone82@gmail.com',
   contactPhone: import.meta.env.VITE_CONTACT_PHONE?.trim() || '+91 9822986005',
   contactLocation:
     import.meta.env.VITE_CONTACT_LOCATION?.trim() ||

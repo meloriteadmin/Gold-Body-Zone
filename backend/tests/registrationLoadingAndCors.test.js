@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import nodemailer from 'nodemailer';
-import { env } from '../src/config/env.js';
 
-describe('Production Registration Loading, Async Email, Order Reuse & CORS Fixes', () => {
+describe('Registration Loading, Order Reuse & CORS', () => {
   describe('1. CORS Origin Matching for Vercel Previews and Production', () => {
     const allowedOrigins = ['http://localhost:5173', 'https://gold-body-zone.vercel.app'];
 
@@ -59,38 +57,6 @@ describe('Production Registration Loading, Async Email, Order Reuse & CORS Fixes
     it('allows requests without origin header (server-to-server, mobile, webhooks)', () => {
       assert.equal(isOriginAllowed(undefined), true);
       assert.equal(isOriginAllowed(null), true);
-    });
-  });
-
-  describe('2. SMTP Transporter Socket Timeouts', () => {
-    it('configures Nodemailer with connection, greeting, and socket timeouts', () => {
-      const originalCreate = nodemailer.createTransport;
-      let capturedOptions = null;
-
-      nodemailer.createTransport = (opts) => {
-        capturedOptions = opts;
-        return { sendMail: async () => ({ messageId: 'test' }) };
-      };
-
-      try {
-        // Trigger createTransport via test options
-        const opts = {
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          auth: { user: 'test@example.com', pass: 'secret' },
-          connectionTimeout: 5000,
-          greetingTimeout: 5000,
-          socketTimeout: 10000,
-        };
-        const transporter = nodemailer.createTransport(opts);
-        assert.ok(transporter);
-        assert.equal(capturedOptions.connectionTimeout, 5000);
-        assert.equal(capturedOptions.greetingTimeout, 5000);
-        assert.equal(capturedOptions.socketTimeout, 10000);
-      } finally {
-        nodemailer.createTransport = originalCreate;
-      }
     });
   });
 
@@ -210,42 +176,4 @@ describe('Production Registration Loading, Async Email, Order Reuse & CORS Fixes
     });
   });
 
-  describe('4. Asynchronous Acknowledgement Email Handling', () => {
-    it('dispatches acknowledgement email in background so SMTP failures do not fail registration', async () => {
-      let emailAttempted = false;
-      let errorLogged = false;
-
-      async function sendRegistrationAcknowledgementEmailMock() {
-        emailAttempted = true;
-        const err = new Error('ETIMEDOUT: Connection to smtp.gmail.com:587 timed out');
-        err.code = 'ETIMEDOUT';
-        throw err;
-      }
-
-      // Simulate controller flow: fire-and-forget email with error catch
-      let registrationResponse = null;
-      const registrationRecord = { id: 'reg-test-123' };
-
-      sendRegistrationAcknowledgementEmailMock(registrationRecord.id).catch(
-        (err) => {
-          errorLogged = true;
-        }
-      );
-
-      registrationResponse = {
-        reusedPendingRegistration: false,
-        registration: { id: registrationRecord.id },
-        acknowledgementEmail: { queued: true },
-      };
-
-      // Ensure registration immediately succeeded
-      assert.ok(registrationResponse);
-      assert.equal(registrationResponse.acknowledgementEmail.queued, true);
-      assert.equal(emailAttempted, true);
-
-      // Wait a tick for promise rejection to be caught
-      await new Promise((r) => setTimeout(r, 10));
-      assert.equal(errorLogged, true, 'Error was caught and logged gracefully without throwing to client');
-    });
-  });
 });

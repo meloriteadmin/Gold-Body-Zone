@@ -6,7 +6,6 @@ import {
   createCashfreeUpiQr,
   fetchCashfreeOrderState,
 } from '../services/cashfree.service.js';
-import { sendRegistrationConfirmationEmail } from '../services/email.service.js';
 import {
   generateRegistrationsCsv,
   generateRegistrationsExcel,
@@ -216,60 +215,6 @@ export async function updateRegistrationStatus(req, res, next) {
 
     res.status(200).json({
       registration: serializeRegistration(updated),
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-export async function resendRegistrationConfirmationEmail(req, res, next) {
-  try {
-    const prisma = getPrismaClient();
-    const existing = await prisma.registration.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!existing) {
-      throw new HttpError(404, 'Registration not found.');
-    }
-
-    if (
-      existing.paymentStatus !== 'PAID' ||
-      existing.registrationStatus !== 'CONFIRMED'
-    ) {
-      throw new HttpError(
-        400,
-        'Confirmation email can only be sent for confirmed registrations with PAID status.'
-      );
-    }
-
-    if (existing.confirmationEmailSentAt) {
-      return res.status(200).json({
-        sent: false,
-        alreadySent: true,
-        confirmationEmailSentAt: existing.confirmationEmailSentAt.toISOString(),
-      });
-    }
-
-    const emailResult = await sendRegistrationConfirmationEmail(existing.id);
-
-    if (emailResult.reason === 'EMAIL_NOT_CONFIGURED') {
-      throw new HttpError(
-        503,
-        emailResult.message || 'SMTP email credentials are not configured.'
-      );
-    }
-
-    if (!emailResult.sent) {
-      throw new HttpError(
-        502,
-        emailResult.message || 'Failed to send confirmation email via SMTP.'
-      );
-    }
-
-    return res.status(200).json({
-      sent: true,
-      alreadySent: false,
     });
   } catch (err) {
     next(err);
@@ -527,15 +472,6 @@ export async function createManualRegistration(req, res, next) {
       });
     });
 
-    if (isPaid) {
-      sendRegistrationConfirmationEmail(registration.id).catch((e) => {
-        console.warn(
-          `[email] Failed to send confirmation email for manual registration ${registration.id}:`,
-          e.message
-        );
-      });
-    }
-
     let upiQr = null;
     if (isOnline) {
       if (env.isCashfreeConfigured) {
@@ -617,7 +553,7 @@ export async function createManualRegistration(req, res, next) {
 
 /**
  * Verify payment status with Cashfree for a registration.
- * If Cashfree reports PAID, automatically settles the payment and sends confirmation email.
+ * If Cashfree reports PAID, settles the payment in the database.
  */
 export async function verifyRegistrationPayment(req, res, next) {
   try {

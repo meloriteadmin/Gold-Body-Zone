@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
@@ -16,12 +17,13 @@ import { apiClient } from '../lib/apiClient.js';
 import { formatDateTime } from '../utils/formatters.js';
 
 export function AdminProfilePage() {
+  const navigate = useNavigate();
   const {
     accessToken,
     adminProfile,
     setAdminProfile,
     refreshAdminProfile,
-    sendPasswordResetEmail,
+    changePassword,
   } = useAuth();
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -31,10 +33,11 @@ export function AdminProfilePage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Password Reset Link state
-  const [sendingReset, setSendingReset] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   useEffect(() => {
     refreshAdminProfile().catch(() => {});
@@ -100,21 +103,21 @@ export function AdminProfilePage() {
     }
   };
 
-  const handleRequestPasswordReset = async () => {
+  const handleChangePassword = async (event) => {
+    event.preventDefault();
     setPasswordError('');
-    setPasswordSuccess('');
-    setSendingReset(true);
+    if (newPassword.length < 12 || newPassword !== confirmPassword) {
+      setPasswordError('New password must have at least 12 characters and match the confirmation.');
+      return;
+    }
+    setChangingPassword(true);
     try {
-      await sendPasswordResetEmail(adminProfile?.email);
-      setPasswordSuccess(
-        `A secure password reset link has been sent to ${adminProfile?.email || 'your registered email'}. Please check your inbox.`
-      );
+      await changePassword(currentPassword, newPassword);
+      navigate('/admin/login', { replace: true });
     } catch (err) {
-      setPasswordError(
-        err.message || 'Unable to send password reset email. Please try again.'
-      );
+      setPasswordError(err.message || 'Could not change password.');
     } finally {
-      setSendingReset(false);
+      setChangingPassword(false);
     }
   };
 
@@ -286,7 +289,7 @@ export function AdminProfilePage() {
         </dl>
       </section>
 
-      {/* Change Password via Email Reset Link */}
+      {/* Authenticated password change */}
       <section className="rounded-2xl border border-white/[0.08] bg-[#222222] p-6">
         <div className="flex items-center gap-2 border-b border-white/[0.08] pb-4">
           <KeyRound className="h-5 w-5 text-[#F15A24]" />
@@ -296,7 +299,7 @@ export function AdminProfilePage() {
         </div>
 
         <p className="mt-4 text-xs leading-relaxed text-[#A1A1AA]">
-          To change your password securely, click below to receive a password reset link at your registered email address ({adminProfile?.email || 'registered email'}). The link opens a secure page where you can enter and confirm your new password.
+          Enter your current password to change it. If you cannot sign in, an authorized VPS administrator can recover your account locally.
         </p>
 
         {passwordError && (
@@ -309,28 +312,23 @@ export function AdminProfilePage() {
           </div>
         )}
 
-        {passwordSuccess && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-xs font-medium text-emerald-200">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span>{passwordSuccess}</span>
-          </div>
-        )}
-
-        <div className="mt-5 flex justify-start">
+        <form onSubmit={handleChangePassword} className="mt-5 space-y-3">
+          <input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Current password" aria-label="Current password" className="w-full rounded-xl border border-white/10 bg-[#171717] px-4 py-2.5 text-sm text-white" />
+          <input type="password" autoComplete="new-password" required minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="New password (12 or more characters)" aria-label="New password" className="w-full rounded-xl border border-white/10 bg-[#171717] px-4 py-2.5 text-sm text-white" />
+          <input type="password" autoComplete="new-password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm new password" aria-label="Confirm new password" className="w-full rounded-xl border border-white/10 bg-[#171717] px-4 py-2.5 text-sm text-white" />
           <button
-            type="button"
-            disabled={sendingReset}
-            onClick={handleRequestPasswordReset}
+            type="submit"
+            disabled={changingPassword}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#F15A24] to-[#E94B16] px-5 py-2.5 text-xs font-bold tracking-wider text-white uppercase shadow-lg shadow-[#F15A24]/25 transition-all hover:brightness-110 disabled:opacity-60"
           >
-            {sendingReset ? (
+            {changingPassword ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <KeyRound className="h-3.5 w-3.5" />
             )}
-            {sendingReset ? 'Sending Reset Link...' : 'Send Password Reset Link'}
+            {changingPassword ? 'Changing Password...' : 'Change Password'}
           </button>
-        </div>
+        </form>
       </section>
     </div>
   );

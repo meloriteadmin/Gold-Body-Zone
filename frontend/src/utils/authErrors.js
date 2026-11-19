@@ -15,8 +15,6 @@ export const AUTH_ERROR_MESSAGES = {
   CURRENT_PASSWORD_INCORRECT: 'Current password is incorrect.',
   SESSION_VERIFY_FAILED: 'Unable to verify admin privileges.',
   CHANGE_PASSWORD_FAILED: 'Unable to update password. Please try again.',
-  PASSWORD_RESET_FAILED:
-    'Unable to send password reset email. Please try again later.',
 };
 
 export const OPERATION_FALLBACKS = {
@@ -24,7 +22,6 @@ export const OPERATION_FALLBACKS = {
   session_verify: AUTH_ERROR_MESSAGES.SESSION_VERIFY_FAILED,
   change_password_verify: AUTH_ERROR_MESSAGES.CURRENT_PASSWORD_INCORRECT,
   change_password: AUTH_ERROR_MESSAGES.CHANGE_PASSWORD_FAILED,
-  password_reset: AUTH_ERROR_MESSAGES.PASSWORD_RESET_FAILED,
 };
 
 /**
@@ -44,7 +41,6 @@ export function isRateLimitError(error) {
     code === 'over_request_rate_limit' ||
     code === 'rate_limit_exceeded' ||
     code === 'too_many_requests' ||
-    code === 'over_email_send_rate_limit' ||
     message.includes('rate limit') ||
     message.includes('too many requests') ||
     message.includes('too many login attempts') ||
@@ -114,7 +110,7 @@ export function isInvalidCredentialsError(error) {
  *
  * @param {unknown} error - Error thrown by the API client
  * @param {object} [options]
- * @param {'login' | 'session_verify' | 'change_password_verify' | 'change_password' | 'password_reset'} [options.operation] - Authentication operation context
+ * @param {'login' | 'session_verify' | 'change_password_verify' | 'change_password'} [options.operation] - Authentication operation context
  * @param {string} [options.fallbackMessage] - Optional custom fallback message
  * @returns {string} Safe, human-readable error message
  */
@@ -142,8 +138,7 @@ export function mapAuthError(error, options = {}) {
       trimmed === AUTH_ERROR_MESSAGES.ACCESS_DENIED ||
       trimmed === AUTH_ERROR_MESSAGES.CURRENT_PASSWORD_INCORRECT ||
       trimmed === AUTH_ERROR_MESSAGES.SESSION_VERIFY_FAILED ||
-      trimmed === AUTH_ERROR_MESSAGES.CHANGE_PASSWORD_FAILED ||
-      trimmed === AUTH_ERROR_MESSAGES.PASSWORD_RESET_FAILED
+      trimmed === AUTH_ERROR_MESSAGES.CHANGE_PASSWORD_FAILED
     ) {
       return trimmed;
     }
@@ -151,15 +146,12 @@ export function mapAuthError(error, options = {}) {
 
   // 1. Rate limit detection.
   if (isRateLimitError(error)) {
-    if (operation === 'password_reset') {
-      return AUTH_ERROR_MESSAGES.RATE_LIMITED_REQUESTS;
-    }
     return AUTH_ERROR_MESSAGES.RATE_LIMITED;
   }
 
   // 2. Network / offline detection.
   // Must take precedence over credential or fallback evaluation so that network drops
-  // during password reset or change password never incorrectly show "Invalid email or password."
+  // during password changes never incorrectly show "Invalid email or password."
   if (isNetworkError(error)) {
     return AUTH_ERROR_MESSAGES.NETWORK_ERROR;
   }
@@ -179,9 +171,6 @@ export function mapAuthError(error, options = {}) {
   if (isInvalidCredentialsError(error)) {
     if (operation === 'change_password_verify') {
       return AUTH_ERROR_MESSAGES.CURRENT_PASSWORD_INCORRECT;
-    }
-    if (operation === 'password_reset') {
-      return options.fallbackMessage || AUTH_ERROR_MESSAGES.PASSWORD_RESET_FAILED;
     }
     if (operation === 'session_verify') {
       return options.fallbackMessage || AUTH_ERROR_MESSAGES.SESSION_VERIFY_FAILED;

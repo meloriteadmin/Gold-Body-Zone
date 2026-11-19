@@ -15,10 +15,6 @@ if (env.nodeEnv === 'production') {
     ['CASHFREE_APP_ID', env.cashfreeAppId],
     ['CASHFREE_SECRET_KEY', env.cashfreeSecretKey],
     ['PUBLIC_APP_URL', env.publicAppUrl],
-    ['SMTP_HOST', env.smtpHost],
-    ['SMTP_USER', env.smtpUser],
-    ['SMTP_PASS', env.smtpPass],
-    ['SMTP_FROM', env.emailFrom],
   ].filter(([, value]) => !value).map(([name]) => name);
   const requiredCashfreeMode = env.stagingMode ? 'sandbox' : 'production';
   if (missing.length || env.cashfreeEnv !== requiredCashfreeMode) {

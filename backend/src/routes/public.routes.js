@@ -5,7 +5,6 @@ import {
   getPublishedCompetition,
   listPublishedCompetitions,
   retryRegistrationPayment,
-  submitContactEnquiry,
   verifyPublicOrderPayment,
 } from '../controllers/public.controller.js';
 import { publicMutationLimiter, publicLookupLimiter } from '../middleware/rateLimiter.js';
@@ -32,6 +31,5 @@ router.post(
   retryRegistrationPayment
 );
 router.post('/payments/verify-order', publicMutationLimiter, verifyPublicOrderPayment);
-router.post('/contact/enquiry', submitContactEnquiry);
 
 export default router;

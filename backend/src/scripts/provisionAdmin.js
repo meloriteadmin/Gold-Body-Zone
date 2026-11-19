@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { getPrismaClient } from '../config/prisma.js';
 import { hashPassword, normalizeEmail } from '../services/localAuth.service.js';
 
@@ -17,8 +18,19 @@ async function main() {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !options['password-file']) {
     throw new Error('Usage: npm run admin:provision -- --email admin@example.com --password-file /secure/path [--name Name] [--role ADMIN|SUPER_ADMIN]');
   }
-  const password = (await fs.readFile(options['password-file'], 'utf8')).trimEnd();
-  if (password.length < 12 || password.length > 256) throw new Error('Password must be 12–256 characters.');
+  const handle = await fs.open(options['password-file'], constants.O_RDONLY | constants.O_NOFOLLOW);
+  let password;
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || (metadata.mode & 0o777) !== 0o600 ||
+        (process.getuid && metadata.uid !== process.getuid())) {
+      throw new Error('Password file must be a regular file owned by the operator with mode 0600.');
+    }
+    password = (await handle.readFile('utf8')).replace(/\r?\n$/, '');
+  } finally {
+    await handle.close();
+  }
+  if (password.length < 12 || password.length > 256 || /[\r\n\0]/.test(password)) throw new Error('Password must be 12–256 characters.');
   const prisma = getPrismaClient();
   const existing = await prisma.adminProfile.findUnique({ where: { email } });
   const role = options.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : existing?.role || 'ADMIN';

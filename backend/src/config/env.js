@@ -8,7 +8,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config();
 
 const port = Number.parseInt(process.env.PORT || '5000', 10);
-const smtpPort = Number.parseInt(process.env.SMTP_PORT || '587', 10);
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -37,33 +36,11 @@ export const env = {
       ? 'production'
       : 'sandbox',
 
-  // Backend Email Service (SMTP via Nodemailer)
-  smtpHost: process.env.SMTP_HOST?.trim() || '',
-  smtpPort: Number.isNaN(smtpPort) ? 587 : smtpPort,
-  smtpSecure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
-  smtpUser: process.env.SMTP_USER?.trim() || '',
-  smtpPass: process.env.SMTP_PASS?.trim() || '',
-  smtpFrom:
-    process.env.SMTP_FROM?.trim() || process.env.EMAIL_FROM?.trim() || '',
-  get emailFrom() {
-    return (
-      this.smtpFrom ||
-      (this.smtpUser ? `GOLD BODY ZONE <${this.smtpUser}>` : '')
-    );
-  },
-  set emailFrom(val) {
-    this.smtpFrom = val ? String(val).trim() : '';
-  },
 
   get isDatabaseConfigured() {
     return Boolean(this.databaseUrl);
   },
   get isCashfreeConfigured() {
     return Boolean(this.cashfreeAppId && this.cashfreeSecretKey);
-  },
-  get isEmailConfigured() {
-    return Boolean(
-      this.smtpHost && this.smtpUser && this.smtpPass && this.emailFrom
-    );
   },
 };

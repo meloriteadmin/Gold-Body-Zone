@@ -39,11 +39,6 @@ export function AuthProvider({ children }) {
     setAdminProfile(null);
   }, []);
 
-  const sendPasswordResetEmail = useCallback(async (email) => {
-    await apiClient.requestAdminPasswordReset(email || adminProfile?.email);
-    return true;
-  }, [adminProfile?.email]);
-
   const refreshAdminProfile = useCallback(async () => {
     const data = await apiClient.adminSession();
     setAdminProfile(data.profile);
@@ -60,10 +55,9 @@ export function AuthProvider({ children }) {
     signIn,
     signOut,
     changePassword,
-    sendPasswordResetEmail,
     refreshAdminProfile,
     setAdminProfile,
-  }), [adminProfile, loading, authError, signIn, signOut, changePassword, sendPasswordResetEmail, refreshAdminProfile]);
+  }), [adminProfile, loading, authError, signIn, signOut, changePassword, refreshAdminProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

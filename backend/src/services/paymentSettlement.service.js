@@ -1,6 +1,5 @@
 import { getPrismaClient } from '../config/prisma.js';
 import { HttpError } from '../utils/httpError.js';
-import { sendRegistrationConfirmationEmail } from './email.service.js';
 
 const REGISTRATION_INCLUDE = {
   competition: {
@@ -41,7 +40,7 @@ function toPaisa(amount) {
 /**
  * Atomically settles a verified payment outcome from Cashfree (server API or signed webhook),
  * validates paid amounts against stored order amount, protects cancelled registrations,
- * prevents out-of-order PAID downgrades, and dispatches the confirmation email strictly once.
+ * prevents out-of-order PAID downgrades.
  */
 export async function settleVerifiedPayment({
   orderId,
@@ -64,7 +63,7 @@ export async function settleVerifiedPayment({
 
   // Lock and reread the row so concurrent webhook and status checks cannot
   // calculate a downgrade from the same stale PENDING state.
-  const { updatedRegistration, shouldSendConfirmation } = await prisma.$transaction(async (tx) => {
+  const updatedRegistration = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM payments WHERE id = ${initialRecord.id} FOR UPDATE`;
     const paymentRecord = await tx.payment.findUnique({
       where: { id: initialRecord.id }, include: { registration: true },
@@ -152,12 +151,8 @@ export async function settleVerifiedPayment({
       },
       include: REGISTRATION_INCLUDE,
     });
-  return { updatedRegistration, shouldSendConfirmation: effectiveStatus === 'PAID' && !isCancelledRegistration };
+  return updatedRegistration;
   });
-
-  if (shouldSendConfirmation) {
-    await sendRegistrationConfirmationEmail(updatedRegistration.id);
-  }
 
   return updatedRegistration;
 }

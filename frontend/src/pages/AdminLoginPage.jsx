@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { mapAuthError } from '../utils/authErrors.js';
-import { apiClient } from '../lib/apiClient.js';
 
 export function AdminLoginPage() {
   const navigate = useNavigate();
@@ -30,7 +29,6 @@ export function AdminLoginPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [resetMessage, setResetMessage] = useState('');
 
   if (!authLoading && isAuthenticated) {
     const redirectTo = location.state?.from || '/admin';
@@ -218,20 +216,9 @@ export function AdminLoginPage() {
               )}
             </button>
           </form>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!email.trim()) { setResetMessage('Enter your admin email first.'); return; }
-              try {
-                const result = await apiClient.requestAdminPasswordReset(email.trim());
-                setResetMessage(result.message);
-              } catch (err) { setResetMessage(err.message); }
-            }}
-            className="mt-4 text-sm text-[#F15A24] hover:underline"
-          >
-            Forgot password?
-          </button>
-          {resetMessage && <p role="status" className="mt-2 text-sm text-zinc-300">{resetMessage}</p>}
+          <p className="mt-4 text-xs text-[#A1A1AA]">
+            Forgot your password? Contact the authorized VPS administrator for local account recovery.
+          </p>
         </div>
       </div>
     </div>

@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   FileText,
-  Mail,
   MapPin,
   Phone,
   ShieldAlert,
@@ -11,7 +10,6 @@ import { Link } from 'react-router-dom';
 
 const BUSINESS_DETAILS = {
   name: 'GOLD BODY ZONE GYM',
-  email: 'bodyzone82@gmail.com',
   phone: '+91 9822986005',
   phoneClean: '+919822986005',
   address:
@@ -82,13 +80,8 @@ export function TermsPage() {
                 <span className="font-semibold text-white">{BUSINESS_DETAILS.name}</span>
               </div>
               <div>
-                <span className="text-zinc-500 block uppercase">Official Email</span>
-                <a
-                  href={`mailto:${BUSINESS_DETAILS.email}`}
-                  className="font-semibold text-[#F15A24] hover:underline"
-                >
-                  {BUSINESS_DETAILS.email}
-                </a>
+                <span className="text-zinc-500 block uppercase">Contact</span>
+                <span className="font-semibold text-white">Call the organizer</span>
               </div>
               <div>
                 <span className="text-zinc-500 block uppercase">Official Phone</span>
@@ -192,18 +185,6 @@ export function TermsPage() {
                     {BUSINESS_DETAILS.phone}
                   </a>
                   <p className="text-xs text-zinc-500">Call for immediate enquiries</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-[#F15A24]" />
-                <div>
-                  <a
-                    href={`mailto:${BUSINESS_DETAILS.email}`}
-                    className="font-medium text-white hover:text-[#F15A24]"
-                  >
-                    {BUSINESS_DETAILS.email}
-                  </a>
-                  <p className="text-xs text-zinc-500">Official business email</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">

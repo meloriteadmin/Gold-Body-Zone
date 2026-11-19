@@ -29,7 +29,6 @@ import {
   exportRegistrations,
   getRegistrationById,
   listRegistrations,
-  resendRegistrationConfirmationEmail,
   updateRegistrationStatus,
   verifyRegistrationPayment,
 } from '../controllers/adminRegistrations.controller.js';
@@ -144,11 +143,6 @@ router.patch('/registrations/:id/status', updateRegistrationStatus);
 router.post(
   '/registrations/:id/verify-payment',
   verifyRegistrationPayment
-);
-router.post(
-  '/registrations/:id/resend-confirmation-email',
-  adminSensitiveLimiter,
-  resendRegistrationConfirmationEmail
 );
 router.get('/registrations/:id/refunds', listRefunds);
 router.post('/registrations/:id/refunds', adminSensitiveLimiter, requireSuperAdmin, createRefund);

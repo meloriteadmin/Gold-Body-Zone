@@ -118,9 +118,7 @@ export function CompetitionDetailsPage() {
         if (!mountedRef.current) return;
 
         if (outcome.registration && outcome.registration.paymentStatus === 'PAID') {
-          setPaymentSuccessNotice(
-            `Payment verified successfully! Registration #${outcome.registration.registrationCode || ''} is confirmed.`
-          );
+          setPaymentSuccessNotice(outcome.registration);
         }
         if (outcome.status === 'error') {
           setPaymentActionError(outcome.error);
@@ -269,7 +267,14 @@ export function CompetitionDetailsPage() {
           <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 text-sm text-emerald-200">
             <div className="flex items-center gap-3">
               <CheckCircle className="h-5 w-5 shrink-0 text-emerald-400" />
-              <span>{paymentSuccessNotice}</span>
+              <div>
+                <p className="font-semibold">Registration confirmed after server-side payment verification.</p>
+                <p>Registration ID: <span className="font-mono">{paymentSuccessNotice.registrationCode}</span></p>
+                <p>Payment status: {paymentSuccessNotice.paymentStatus}</p>
+                {paymentSuccessNotice.payment?.cashfreeOrderId && (
+                  <p>Payment reference: <span className="break-all font-mono">{paymentSuccessNotice.payment.cashfreePaymentId || paymentSuccessNotice.payment.cashfreeOrderId}</span></p>
+                )}
+              </div>
             </div>
             <button
               type="button"

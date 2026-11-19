@@ -6,7 +6,6 @@ import { PublicLayout } from '../components/public/PublicLayout.jsx';
 import { AuthProvider } from '../context/AuthContext.jsx';
 import { AdminLoginPage } from '../pages/AdminLoginPage.jsx';
 import { AdminProfilePage } from '../pages/AdminProfilePage.jsx';
-import { AdminResetPasswordPage } from '../pages/AdminResetPasswordPage.jsx';
 import { AdminCompetitionDetailPage } from '../pages/AdminCompetitionDetailPage.jsx';
 import { CompetitionDetailsPage } from '../pages/CompetitionDetailsPage.jsx';
 import { CompetitionsListPage } from '../pages/CompetitionsListPage.jsx';
@@ -55,7 +54,6 @@ export function AppRouter() {
         {/* Separate Protected Admin Portal */}
         <Route element={<AdminPortalScope />}>
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/admin/reset-password" element={<AdminResetPasswordPage />} />
           <Route element={<ProtectedAdminRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<DashboardOverviewPage />} />

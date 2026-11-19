@@ -75,8 +75,6 @@ export const apiClient = {
   adminSession: () => request('/auth/admin/session'),
   adminLogout: () => request('/auth/admin/logout', { method: 'POST' }),
   changeAdminPassword: (currentPassword, newPassword) => request('/auth/admin/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
-  requestAdminPasswordReset: (email) => request('/auth/admin/request-password-reset', { method: 'POST', body: { email } }),
-  resetAdminPassword: (token, password) => request('/auth/admin/reset-password', { method: 'POST', body: { token, password } }),
   fetchAdminStorage: () => request('/admin/storage'),
   // Public
   fetchPublishedCompetitions: ({ force = false } = {}) => {
@@ -159,11 +157,6 @@ export const apiClient = {
       token,
       body: payload,
       timeoutMs: 20000,
-    }),
-  submitContactEnquiry: (payload) =>
-    request('/public/contact/enquiry', {
-      method: 'POST',
-      body: payload,
     }),
   // Admin Dashboard & Profile
   fetchAdminDashboard: (token) => request('/admin/dashboard', { token }),

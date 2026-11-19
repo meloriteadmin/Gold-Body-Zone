@@ -18,6 +18,7 @@ services:
     restart: unless-stopped
     env_file: .env.production
     environment:
+      NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 5001
       UPLOAD_DIRECTORY: /app/uploads
