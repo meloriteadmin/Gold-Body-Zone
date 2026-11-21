@@ -283,14 +283,6 @@ export function AdminProfilePage() {
             </dd>
           </div>
 
-          <div className="rounded-xl border border-white/[0.06] bg-[#171717] p-4">
-            <dt className="font-semibold tracking-wider text-[#A1A1AA] uppercase">
-              Last Sign In
-            </dt>
-            <dd className="mt-1 text-sm text-white">
-              {formatDateTime(adminProfile?.lastSignInAt)}
-            </dd>
-          </div>
         </dl>
       </section>
 

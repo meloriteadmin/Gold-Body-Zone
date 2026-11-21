@@ -1,5 +1,4 @@
 import { env } from '../config/env.js';
-import { supabase } from './supabase.js';
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -9,30 +8,13 @@ export class ApiError extends Error {
   }
 }
 
-async function resolveToken(token) {
-  if (typeof token === 'string' && token.trim()) {
-    return token.trim();
-  }
-  if (supabase) {
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session?.access_token) {
-        return data.session.access_token.trim();
-      }
-    } catch {
-      // Ignore session read error
-    }
-  }
-  return '';
-}
-
 async function request(
   path,
   { method = 'GET', token, body, isFormData = false, timeoutMs = 0, headers: customHeaders = {} } = {}
 ) {
   const headers = { ...customHeaders };
-  const rawToken = await resolveToken(token);
-  if (rawToken) {
+  if (token && typeof token === 'string' && token.trim() && token !== 'cookie-session') {
+    const rawToken = token.trim();
     headers.Authorization = rawToken.startsWith('Bearer ')
       ? rawToken
       : `Bearer ${rawToken}`;
@@ -52,6 +34,7 @@ async function request(
     response = await fetch(`${env.apiBaseUrl}${path}`, {
       method,
       headers,
+      credentials: 'include',
       signal: controller?.signal,
       body: isFormData
         ? body
@@ -93,10 +76,14 @@ let pendingCompetitionsPromise = null;
 const competitionDetailCache = new Map();
 const pendingDetailPromises = new Map();
 
-let pendingMyRegistrationsPromise = null;
-let lastMyRegistrationsToken = null;
-
 export const apiClient = {
+  adminLogin: (email, password) => request('/auth/admin/login', { method: 'POST', body: { email, password } }),
+  adminSession: () => request('/auth/admin/session'),
+  adminLogout: () => request('/auth/admin/logout', { method: 'POST' }),
+  changeAdminPassword: (currentPassword, newPassword) => request('/auth/admin/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
+  requestAdminPasswordReset: (email) => request('/auth/admin/request-password-reset', { method: 'POST', body: { email } }),
+  resetAdminPassword: (token, password) => request('/auth/admin/reset-password', { method: 'POST', body: { token, password } }),
+  fetchAdminStorage: () => request('/admin/storage'),
   // Public
   fetchPublishedCompetitions: ({ force = false } = {}) => {
     const now = Date.now();
@@ -184,30 +171,6 @@ export const apiClient = {
       method: 'POST',
       body: payload,
     }),
-  fetchMyRegistrations: (token) => {
-    const cleanToken = typeof token === 'string' ? token.trim() : '';
-    if (
-      pendingMyRegistrationsPromise &&
-      lastMyRegistrationsToken === cleanToken
-    ) {
-      return pendingMyRegistrationsPromise;
-    }
-
-    lastMyRegistrationsToken = cleanToken;
-    const promise = request('/public/my-registrations', {
-      token: cleanToken,
-      timeoutMs: 15000,
-    }).finally(() => {
-      if (pendingMyRegistrationsPromise === promise) {
-        pendingMyRegistrationsPromise = null;
-        lastMyRegistrationsToken = null;
-      }
-    });
-
-    pendingMyRegistrationsPromise = promise;
-    return promise;
-  },
-
   // Admin Dashboard & Profile
   fetchAdminDashboard: (token) => request('/admin/dashboard', { token }),
   fetchAdminProfile: (token) => request('/admin/profile', { token }),
@@ -422,6 +385,13 @@ export const apiClient = {
       method: 'POST',
       token,
     }),
+  fetchRefunds: (id) => request(`/admin/registrations/${encodeURIComponent(id)}/refunds`),
+  requestRefund: (id, payload) => request(`/admin/registrations/${encodeURIComponent(id)}/refunds`, {
+    method: 'POST', body: payload,
+  }),
+  reconcileRefunds: (id) => request(`/admin/registrations/${encodeURIComponent(id)}/refunds/reconcile`, {
+    method: 'POST',
+  }),
   downloadRegistrationsExport: async (token, params = {}) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
@@ -431,14 +401,7 @@ export const apiClient = {
     }
     const qs = query.toString();
     const url = `${env.apiBaseUrl}/admin/registrations/export${qs ? `?${qs}` : ''}`;
-    const rawToken = await resolveToken(token);
-    const headers = {};
-    if (rawToken) {
-      headers.Authorization = rawToken.startsWith('Bearer ')
-        ? rawToken
-        : `Bearer ${rawToken}`;
-    }
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) {
       const errData = await res.json().catch(() => null);
       throw new ApiError(res.status, errData?.message || 'Export failed.');
@@ -486,14 +449,14 @@ export const apiClient = {
     ),
   downloadTrunkNumbersExport: async (token, competitionId) => {
     const url = `${env.apiBaseUrl}/admin/competitions/${encodeURIComponent(competitionId)}/trunk-numbers/export`;
-    const rawToken = await resolveToken(token);
     const headers = {};
-    if (rawToken) {
+    if (token && typeof token === 'string' && token.trim() && token !== 'cookie-session') {
+      const rawToken = token.trim();
       headers.Authorization = rawToken.startsWith('Bearer ')
         ? rawToken
         : `Bearer ${rawToken}`;
     }
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, credentials: 'include' });
     if (!res.ok) {
       const errData = await res.json().catch(() => null);
       throw new ApiError(

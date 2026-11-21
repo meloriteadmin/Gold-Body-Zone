@@ -589,7 +589,7 @@ describe('Admin Manual Registration & Offline Payments', () => {
       };
     }
 
-    const XLSX = (await import('xlsx')).default || (await import('xlsx'));
+    const ExcelJS = (await import('exceljs')).default;
 
     // Populate mock registrations with 2 records
     mockRegistrations = [
@@ -665,9 +665,10 @@ describe('Admin Manual Registration & Offline Payments', () => {
     assert.equal(resXlsx.statusCode, 200);
     assert.ok(resXlsx.headers['Content-Disposition'].includes('.xlsx'));
     assert.ok(Buffer.isBuffer(resXlsx.body));
-    const wb = XLSX.read(resXlsx.body, { type: 'buffer' });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const excelRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(resXlsx.body);
+    const excelRows = [];
+    wb.worksheets[0].eachRow((row) => excelRows.push(row.values.slice(1)));
     assert.equal(excelRows.length, 3);
     assert.deepEqual(excelRows[0], expectedHeaders);
     assert.equal(excelRows[1][1], 'Vikas Patil');

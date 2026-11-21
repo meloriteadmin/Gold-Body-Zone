@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { HttpError } from './httpError.js';
 
 function getAadhaarKeyMaterial() {
-  const seed = env.aadhaarEncryptionKey || env.supabaseServiceRoleKey;
+  const seed = env.aadhaarEncryptionKey;
   if (!seed) {
     throw new HttpError(
       503,

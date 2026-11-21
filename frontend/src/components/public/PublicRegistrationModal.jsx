@@ -27,6 +27,7 @@ import {
 import { formatFee } from '../../utils/formatters.js';
 import {
   getParticipantIdentity,
+  getParticipantRegistration,
   saveParticipantIdentity,
   saveParticipantRegistration,
 } from '../../utils/participantSession.js';
@@ -278,8 +279,12 @@ export function PublicRegistrationModal({
     }
 
     try {
+      const savedRegistration = getParticipantRegistration(activeCompetition.id);
       const res = await apiClient.checkCompetitionRegistration(activeCompetition.id, {
         email: cleanEmail,
+        statusToken: savedRegistration?.email === cleanEmail
+          ? savedRegistration.statusToken
+          : undefined,
       });
 
       if (res?.registered && res?.isPaid) {
@@ -528,6 +533,11 @@ export function PublicRegistrationModal({
             ? individualOption
             : cleanText(gymNameInput),
       };
+
+      const savedRegistration = getParticipantRegistration(activeCompetition.id);
+      if (savedRegistration?.email === payload.email && savedRegistration.statusToken) {
+        payload.statusToken = savedRegistration.statusToken;
+      }
 
       res = await apiClient.submitPublicRegistration(payload);
     } catch (err) {

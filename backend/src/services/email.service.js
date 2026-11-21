@@ -23,6 +23,13 @@ function getTransporter() {
   return cachedTransporter;
 }
 
+export async function sendLocalAuthEmail({ to, subject, text, html }) {
+  const transporter = getTransporter();
+  if (!transporter) return false;
+  await transporter.sendMail({ from: env.emailFrom, to, subject, text, html });
+  return true;
+}
+
 function formatInr(amount) {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
     return 'Not Set';

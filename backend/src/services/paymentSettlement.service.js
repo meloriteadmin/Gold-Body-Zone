@@ -48,27 +48,53 @@ export async function settleVerifiedPayment({
   nextStatus,
   cfPaymentId,
   paymentAmount,
+  refundAmount,
   paymentTime,
   verificationSource,
 }) {
   const prisma = getPrismaClient();
-  const paymentRecord = await prisma.payment.findUnique({
+  const initialRecord = await prisma.payment.findUnique({
     where: { cashfreeOrderId: String(orderId) },
-    include: { registration: true },
+    select: { id: true },
   });
 
-  if (!paymentRecord) {
+  if (!initialRecord) {
     throw new HttpError(404, 'Matching payment order not found.');
   }
 
+  // Lock and reread the row so concurrent webhook and status checks cannot
+  // calculate a downgrade from the same stale PENDING state.
+  const { updatedRegistration, shouldSendConfirmation } = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM payments WHERE id = ${initialRecord.id} FOR UPDATE`;
+    const paymentRecord = await tx.payment.findUnique({
+      where: { id: initialRecord.id }, include: { registration: true },
+    });
+    if (!paymentRecord) throw new HttpError(404, 'Matching payment order not found.');
+
   // Never downgrade an already-verified PAID payment unless explicitly refunded.
   const effectiveStatus =
-    paymentRecord.status === 'PAID' &&
-    (nextStatus === 'PENDING' || nextStatus === 'FAILED')
-      ? 'PAID'
-      : nextStatus;
+    paymentRecord.status === 'REFUNDED'
+      ? 'REFUNDED'
+      : paymentRecord.status === 'PAID' &&
+          (nextStatus === 'PENDING' || nextStatus === 'FAILED')
+        ? 'PAID'
+        : nextStatus;
 
-  if (nextStatus === 'PAID') {
+  if (nextStatus === 'REFUNDED' && paymentRecord.status !== 'REFUNDED') {
+    if (paymentRecord.status !== 'PAID' || toPaisa(refundAmount) !== toPaisa(paymentRecord.amount)) {
+      throw new HttpError(400, 'Refund amount or payment state does not match the original paid order.');
+    }
+    const successfulRefunds = await tx.refund.findMany({
+      where: { paymentId: paymentRecord.id, status: 'SUCCESS' },
+      select: { amount: true },
+    });
+    const ledgerTotal = successfulRefunds.reduce((sum, refund) => sum + toPaisa(refund.amount), 0);
+    if (ledgerTotal !== toPaisa(paymentRecord.amount)) {
+      throw new HttpError(409, 'Reconcile verified Cashfree refund records before closing this payment.');
+    }
+  }
+
+  if (effectiveStatus === 'PAID' && nextStatus === 'PAID') {
     const expectedPaisa = toPaisa(paymentRecord.amount);
     const incomingPaisa = toPaisa(paymentAmount);
 
@@ -85,8 +111,9 @@ export async function settleVerifiedPayment({
   }
 
   const isDowngradeAttemptOnPaid =
-    paymentRecord.status === 'PAID' &&
-    (nextStatus === 'PENDING' || nextStatus === 'FAILED');
+    (paymentRecord.status === 'PAID' &&
+      (nextStatus === 'PENDING' || nextStatus === 'FAILED')) ||
+    (paymentRecord.status === 'REFUNDED' && nextStatus !== 'REFUNDED');
 
   const isCancelledRegistration =
     paymentRecord.registration?.registrationStatus === 'CANCELLED';
@@ -99,8 +126,7 @@ export async function settleVerifiedPayment({
         : paymentRecord.paidAt || now
       : paymentRecord.paidAt;
 
-  const [, updatedRegistration] = await prisma.$transaction([
-    prisma.payment.update({
+  await tx.payment.update({
       where: { id: paymentRecord.id },
       data: {
         status: effectiveStatus,
@@ -108,24 +134,29 @@ export async function settleVerifiedPayment({
           ? { cashfreePaymentId: String(cfPaymentId) }
           : {}),
         paidAt: parsedPaidAt,
-        verifiedAt: now,
-        verificationSource,
+        verifiedAt: paymentRecord.status === 'REFUNDED' ? paymentRecord.verifiedAt : now,
+        verificationSource: paymentRecord.status === 'REFUNDED'
+          ? paymentRecord.verificationSource
+          : verificationSource,
       },
-    }),
-    prisma.registration.update({
+    });
+  const updatedRegistration = await tx.registration.update({
       where: { id: paymentRecord.registrationId },
       data: {
         paymentStatus: effectiveStatus,
         ...(effectiveStatus === 'PAID' && !isCancelledRegistration
           ? { registrationStatus: 'CONFIRMED' }
-          : {}),
+          : effectiveStatus === 'REFUNDED'
+            ? { registrationStatus: 'CANCELLED' }
+            : {}),
       },
       include: REGISTRATION_INCLUDE,
-    }),
-  ]);
+    });
+  return { updatedRegistration, shouldSendConfirmation: effectiveStatus === 'PAID' && !isCancelledRegistration };
+  });
 
-  if (effectiveStatus === 'PAID' && !isCancelledRegistration) {
-    await sendRegistrationConfirmationEmail(paymentRecord.registrationId);
+  if (shouldSendConfirmation) {
+    await sendRegistrationConfirmationEmail(updatedRegistration.id);
   }
 
   return updatedRegistration;

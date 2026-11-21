@@ -3,6 +3,8 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 
 process.env.DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/testdb';
+process.env.CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || 'test-only-checkout-secret';
+process.env.CHECKOUT_TOKEN_SECRET = process.env.CHECKOUT_TOKEN_SECRET || 'test-only-checkout-secret';
 
 const originalFetch = globalThis.fetch;
 

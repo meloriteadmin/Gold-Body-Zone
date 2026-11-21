@@ -1,6 +1,6 @@
 import { getPrismaClient } from '../config/prisma.js';
 
-const SUPABASE_STORAGE_BASE = 'https://egaajqbbxrsnquniwang.supabase.co/storage/v1/object/public/competition-posters';
+const DEFAULT_POSTER_URL = '/images/competition-poster-english.png';
 
 export const DEFAULT_COMPETITIONS = [
   {
@@ -11,8 +11,8 @@ export const DEFAULT_COMPETITIONS = [
     ageEligibility: null,
     isPublished: true,
     isDefault: true,
-    posterStoragePath: 'bodybuilding-poster.jpg',
-    posterUrl: `${SUPABASE_STORAGE_BASE}/bodybuilding-poster.jpg`,
+    posterStoragePath: null,
+    posterUrl: DEFAULT_POSTER_URL,
     categories: [
       { categoryType: 'WEIGHT', gender: 'MALE', name: '55–65 kg', sortOrder: 1 },
       { categoryType: 'WEIGHT', gender: 'MALE', name: '65–75 kg', sortOrder: 2 },
@@ -28,8 +28,8 @@ export const DEFAULT_COMPETITIONS = [
     ageEligibility: null,
     isPublished: true,
     isDefault: true,
-    posterStoragePath: 'mens-physique-poster.jpg',
-    posterUrl: `${SUPABASE_STORAGE_BASE}/mens-physique-poster.jpg`,
+    posterStoragePath: null,
+    posterUrl: DEFAULT_POSTER_URL,
     categories: [
       { categoryType: 'HEIGHT', gender: 'MALE', name: 'Under 175 cm', sortOrder: 1 },
       { categoryType: 'HEIGHT', gender: 'MALE', name: 'Above 175 cm', sortOrder: 2 },
@@ -43,8 +43,8 @@ export const DEFAULT_COMPETITIONS = [
     ageEligibility: 'Above 40 years of age',
     isPublished: true,
     isDefault: true,
-    posterStoragePath: 'masters-poster.jpg',
-    posterUrl: `${SUPABASE_STORAGE_BASE}/masters-poster.jpg`,
+    posterStoragePath: null,
+    posterUrl: DEFAULT_POSTER_URL,
     categories: [
       {
         categoryType: 'OPEN',
@@ -63,8 +63,8 @@ export const DEFAULT_COMPETITIONS = [
     ageEligibility: null,
     isPublished: true,
     isDefault: true,
-    posterStoragePath: 'womens-competition-poster.jpg',
-    posterUrl: `${SUPABASE_STORAGE_BASE}/womens-competition-poster.jpg`,
+    posterStoragePath: null,
+    posterUrl: DEFAULT_POSTER_URL,
     categories: [
       {
         categoryType: 'OPEN',

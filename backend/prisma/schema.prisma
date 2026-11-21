@@ -53,10 +53,20 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum RefundStatus {
+  REQUESTED
+  PENDING
+  SUCCESS
+  FAILED
+}
+
 model AdminProfile {
   id                String    @id @default(uuid())
-  authUserId        String    @unique @map("auth_user_id")
   email             String    @unique
+  passwordHash      String?   @map("password_hash")
+  passwordChangedAt DateTime? @map("password_changed_at")
+  resetTokenHash    String?   @map("reset_token_hash")
+  resetExpiresAt    DateTime? @map("reset_expires_at")
   fullName          String?   @map("full_name")
   avatarUrl         String?   @map("avatar_url")
   avatarStoragePath String?   @map("avatar_storage_path")
@@ -64,8 +74,23 @@ model AdminProfile {
   isActive          Boolean   @default(true) @map("is_active")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
+  sessions          AdminSession[]
+  requestedRefunds  Refund[]
 
   @@map("admin_profiles")
+}
+
+model AdminSession {
+  id         String       @id @default(uuid())
+  adminId    String       @map("admin_id")
+  tokenHash  String       @unique @map("token_hash")
+  expiresAt  DateTime     @map("expires_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  admin      AdminProfile @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+  @@map("admin_sessions")
 }
 
 model Competition {
@@ -198,9 +223,29 @@ model Payment {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
   registration       Registration  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  refunds            Refund[]
 
   @@index([status])
   @@map("payments")
+}
+
+model Refund {
+  id                 String       @id @default(uuid())
+  paymentId          String       @map("payment_id")
+  cashfreeRefundId   String       @unique @map("cashfree_refund_id")
+  providerRefundId   String?      @unique @map("provider_refund_id")
+  amount             Decimal      @db.Decimal(10, 2)
+  status             RefundStatus @default(REQUESTED)
+  note               String?
+  requestedByAdminId String?      @map("requested_by_admin_id")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  processedAt        DateTime?    @map("processed_at")
+  payment            Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  requestedByAdmin   AdminProfile? @relation(fields: [requestedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId, status])
+  @@map("refunds")
 }
 
 model CompetitionPhoto {

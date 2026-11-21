@@ -4,6 +4,7 @@ import {
   verifyCashfreeWebhookSignature,
 } from '../services/cashfree.service.js';
 import { settleVerifiedPayment } from '../services/paymentSettlement.service.js';
+import { recordVerifiedRefund } from '../services/refund.service.js';
 import { HttpError } from '../utils/httpError.js';
 
 export async function handleCashfreeWebhook(req, res, next) {
@@ -52,12 +53,24 @@ export async function handleCashfreeWebhook(req, res, next) {
     const nextStatus = mapCashfreeStatus(
       req.body?.type,
       req.body?.data?.order?.order_status,
-      req.body?.data?.payment?.payment_status ??
-        req.body?.data?.refund?.refund_status
+      req.body?.data?.refund?.refund_status ??
+        req.body?.data?.payment?.payment_status
     );
 
     if (!orderId) {
       throw new HttpError(400, 'Missing Cashfree order_id in webhook payload.');
+    }
+
+    if (eventType.includes('REFUND')) {
+      const refund = req.body?.data?.refund;
+      if (!refund?.refund_id || refund.refund_amount === undefined || !refund.refund_status) {
+        throw new HttpError(400, 'Incomplete Cashfree refund webhook.');
+      }
+      await recordVerifiedRefund({
+        orderId, refundId: String(refund.refund_id), amount: refund.refund_amount,
+        status: refund.refund_status, providerRefundId: refund.cf_refund_id,
+      });
+      return res.status(200).json({ received: true });
     }
 
     await settleVerifiedPayment({
@@ -65,6 +78,7 @@ export async function handleCashfreeWebhook(req, res, next) {
       nextStatus,
       cfPaymentId,
       paymentAmount,
+      refundAmount: req.body?.data?.refund?.refund_amount,
       paymentTime,
       verificationSource: 'CASHFREE_WEBHOOK',
     });

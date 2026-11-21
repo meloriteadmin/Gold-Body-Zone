@@ -36,7 +36,6 @@ import {
 import { StatusBadge } from '../components/common/StatusBadge.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { apiClient } from '../lib/apiClient.js';
-import { supabase } from '../lib/supabase.js';
 import { getCompetitionPoster } from '../utils/competitionHelpers.js';
 import { formatDate, formatDateTime, formatFee } from '../utils/formatters.js';
 
@@ -58,7 +57,7 @@ const REG_STATUS_OPTIONS = [
 ];
 
 export function RegistrationsPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, adminProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const paramCompetitionId = searchParams.get('competitionId') || '';
 
@@ -96,7 +95,6 @@ export function RegistrationsPage() {
   const [successBanner, setSuccessBanner] = useState('');
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [registrationSuccessData, setRegistrationSuccessData] = useState(null);
-  const [realtimeActive, setRealtimeActive] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState(null);
 
   const handleManualSuccess = (newReg) => {
@@ -256,42 +254,13 @@ export function RegistrationsPage() {
     }
   }, [selectedCompetitionId, loadRegistrations]);
 
-  // Setup Supabase realtime for live payment & registration changes
+  // Refresh payment and registration changes while this admin page is open.
   useEffect(() => {
-    if (!supabase || !selectedCompetitionId) return;
-
-    let channel = null;
-    try {
-      channel = supabase
-        .channel(`admin-registrations-${selectedCompetitionId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'registrations' },
-          () => {
-            loadRegistrations();
-            loadCompetitions();
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'payments' },
-          () => {
-            loadRegistrations();
-            loadCompetitions();
-          }
-        )
-        .subscribe((status) => {
-          setRealtimeActive(status === 'SUBSCRIBED');
-        });
-    } catch {
-      setRealtimeActive(false);
-    }
-
-    return () => {
-      if (channel) {
-        supabase.removeChannel(channel).catch(() => {});
-      }
-    };
+    if (!selectedCompetitionId) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) { loadRegistrations(); loadCompetitions(); }
+    }, 15_000);
+    return () => window.clearInterval(timer);
   }, [selectedCompetitionId, loadRegistrations, loadCompetitions]);
 
   const handleSelectCompetition = (comp) => {
@@ -570,8 +539,18 @@ export function RegistrationsPage() {
       {selectedRegistration && (
         <RegistrationDetailModal
           registration={selectedRegistration}
+          canManageRefunds={adminProfile?.role === 'SUPER_ADMIN'}
           isOpen={Boolean(selectedRegistration)}
           onClose={() => setSelectedRegistration(null)}
+          onUpdateStatus={async (id, registrationStatus) => {
+            const result = await apiClient.updateRegistrationStatus(accessToken, id, registrationStatus);
+            setSelectedRegistration(result.registration);
+            loadRegistrations();
+          }}
+          onStatusUpdated={() => {
+            loadRegistrations();
+            loadCompetitions();
+          }}
         />
       )}
 

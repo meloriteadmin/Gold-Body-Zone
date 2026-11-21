@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { env } from '../config/env.js';
 import { HttpError } from '../utils/httpError.js';
 
-const CASHFREE_API_VERSION = '2023-08-01';
+const CASHFREE_API_VERSION = '2026-01-01';
 
 function getCashfreeBaseUrl() {
   return env.cashfreeEnv === 'production'
@@ -12,7 +12,7 @@ function getCashfreeBaseUrl() {
 }
 
 function getCheckoutTokenSecret() {
-  const seed = env.cashfreeSecretKey || env.supabaseServiceRoleKey;
+  const seed = env.checkoutTokenSecret;
   if (!seed) {
     throw new HttpError(503, 'Server security configuration is missing.');
   }
@@ -84,16 +84,22 @@ export function mapCashfreeStatus(eventType, orderStatus, paymentStatus) {
   const normOrder = String(orderStatus || '').toUpperCase();
   const normPay = String(paymentStatus || '').toUpperCase();
 
+  if (normEvent.includes('REFUND')) {
+    return normPay === 'SUCCESS' || normPay === 'REFUNDED'
+      ? 'REFUNDED'
+      : 'PENDING';
+  }
+
+  if (normPay === 'REFUNDED') {
+    return 'REFUNDED';
+  }
+
   if (
     normEvent === 'PAYMENT_SUCCESS_WEBHOOK' ||
     normOrder === 'PAID' ||
     normPay === 'SUCCESS'
   ) {
     return 'PAID';
-  }
-
-  if (normEvent.includes('REFUND') || normPay === 'REFUNDED') {
-    return 'REFUNDED';
   }
 
   if (
@@ -111,7 +117,7 @@ export function mapCashfreeStatus(eventType, orderStatus, paymentStatus) {
   return 'PENDING';
 }
 
-async function cashfreeRequest(path, { method = 'GET', body } = {}) {
+async function cashfreeRequest(path, { method = 'GET', body, idempotencyKey } = {}) {
   if (!env.isCashfreeConfigured) {
     throw new HttpError(
       503,
@@ -119,16 +125,23 @@ async function cashfreeRequest(path, { method = 'GET', body } = {}) {
     );
   }
 
-  const response = await fetch(`${getCashfreeBaseUrl()}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-version': CASHFREE_API_VERSION,
-      'x-client-id': env.cashfreeAppId,
-      'x-client-secret': env.cashfreeSecretKey,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(`${getCashfreeBaseUrl()}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-version': CASHFREE_API_VERSION,
+        'x-client-id': env.cashfreeAppId,
+        'x-client-secret': env.cashfreeSecretKey,
+        ...(idempotencyKey ? { 'x-idempotency-key': idempotencyKey } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new HttpError(502, 'Cashfree gateway is temporarily unreachable. Please retry or check the existing order.');
+  }
 
   let data = null;
   let rawText = '';
@@ -169,12 +182,13 @@ export async function createCashfreeOrder({
   customerPhone,
   returnUrl,
   notifyUrl,
+  idempotencyKey,
 }) {
   const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+  if (!Number.isFinite(numericAmount) || numericAmount < 1) {
     throw new HttpError(
       400,
-      'Registration fee must be greater than zero before initiating online payment.'
+      'Registration fee must be at least INR 1 before initiating online payment.'
     );
   }
 
@@ -199,6 +213,7 @@ export async function createCashfreeOrder({
   const data = await cashfreeRequest('/orders', {
     method: 'POST',
     body: payload,
+    idempotencyKey,
   });
 
   return {
@@ -232,6 +247,7 @@ export async function fetchCashfreeOrderState(orderId) {
   return {
     orderId: orderData?.order_id || orderId,
     orderStatus: orderData?.order_status || null,
+    orderAmount: orderData?.order_amount !== undefined ? Number(orderData.order_amount) : null,
     paymentSessionId: orderData?.payment_session_id || null,
     nextStatus,
     cfPaymentId: latestAttempt?.cf_payment_id
@@ -245,6 +261,23 @@ export async function fetchCashfreeOrderState(orderId) {
           : null,
     paymentTime: latestAttempt?.payment_time || null,
   };
+}
+
+export async function createCashfreeRefund({ orderId, refundId, amount, note, idempotencyKey }) {
+  return cashfreeRequest(`/orders/${encodeURIComponent(orderId)}/refunds`, {
+    method: 'POST', idempotencyKey,
+    body: { refund_id: refundId, refund_amount: amount, refund_note: note },
+  });
+}
+
+export async function fetchCashfreeRefund(orderId, refundId) {
+  return cashfreeRequest(`/orders/${encodeURIComponent(orderId)}/refunds/${encodeURIComponent(refundId)}`);
+}
+
+export async function fetchCashfreeRefunds(orderId) {
+  const result = await cashfreeRequest(`/orders/${encodeURIComponent(orderId)}/refunds`);
+  if (!Array.isArray(result)) throw new HttpError(502, 'Cashfree returned an invalid refund list.');
+  return result;
 }
 
 export async function createCashfreeUpiQr({ paymentSessionId }) {

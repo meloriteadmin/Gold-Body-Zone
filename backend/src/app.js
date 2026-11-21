@@ -15,8 +15,8 @@ import webhookRoutes from './routes/webhook.routes.js';
 export function createApp() {
   const app = express();
 
-  // Trust reverse proxies (Render, Railway, Cloudflare, Nginx) for accurate client IP resolution
-  app.set('trust proxy', 1);
+  // Only trust a proxy when the deployment explicitly has one directly in front of Node.
+  app.set('trust proxy', env.trustProxy);
 
   // Security HTTP Headers
   app.use(
@@ -39,14 +39,9 @@ export function createApp() {
         if (!origin) {
           return callback(null, true);
         }
-        const isAllowedVercelPreview =
-          typeof origin === 'string' &&
-          /^https:\/\/gold-body-zone(-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
-
         if (
-          allowedOrigins.includes('*') ||
           allowedOrigins.includes(origin) ||
-          isAllowedVercelPreview
+          (env.nodeEnv !== 'production' && allowedOrigins.includes('*'))
         ) {
           return callback(null, true);
         }
@@ -84,7 +79,7 @@ export function createApp() {
   app.use('/health', healthRoutes);
   app.use('/api', apiRoutes);
 
-  // Direct aliases to support callers requesting /public, /admin, or /webhooks directly
+  // Direct aliases to support callers requesting /public, /admin, /judging, or /webhooks directly
   app.use('/public', publicRoutes);
   app.use('/admin', adminRoutes);
   app.use('/judging', judgingRoutes);

@@ -12,16 +12,22 @@ const smtpPort = Number.parseInt(process.env.SMTP_PORT || '587', 10);
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
+  stagingMode: process.env.STAGING_MODE === 'true',
+  stagingRegistrationsEnabled: process.env.STAGING_REGISTRATIONS_ENABLED === 'true',
   port: Number.isNaN(port) ? 5000 : port,
+  host: process.env.HOST?.trim() || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0'),
+  trustProxy: process.env.TRUST_PROXY === '1' ? 1 : false,
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   publicAppUrl:
     process.env.PUBLIC_APP_URL?.trim() ||
-    'https://gold-body-zone.vercel.app',
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173'),
   databaseUrl: process.env.DATABASE_URL?.trim() || '',
   directUrl: process.env.DIRECT_URL?.trim() || '',
-  supabaseUrl: process.env.SUPABASE_URL?.trim() || '',
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '',
-  supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET?.trim() || '',
+  checkoutTokenSecret: process.env.CHECKOUT_TOKEN_SECRET?.trim() || '',
+  aadhaarEncryptionKey: process.env.AADHAAR_ENCRYPTION_KEY?.trim() || '',
+  uploadDirectory: process.env.UPLOAD_DIRECTORY?.trim() || path.resolve(__dirname, '../../uploads'),
+  imageQuotaBytes: 1073741824,
+  databaseQuotaBytes: 524288000,
 
   // Cashfree Payment Gateway
   cashfreeAppId: process.env.CASHFREE_APP_ID?.trim() || '',
@@ -51,9 +57,6 @@ export const env = {
 
   get isDatabaseConfigured() {
     return Boolean(this.databaseUrl);
-  },
-  get isSupabaseConfigured() {
-    return Boolean(this.supabaseUrl && this.supabaseServiceRoleKey);
   },
   get isCashfreeConfigured() {
     return Boolean(this.cashfreeAppId && this.cashfreeSecretKey);

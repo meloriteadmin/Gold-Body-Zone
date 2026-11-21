@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Eye,
   FileEdit,
+  HardDrive,
+  Images,
   Loader2,
   MapPin,
   Plus,
@@ -27,6 +29,8 @@ export function DashboardOverviewPage() {
     draftCompetitions: 0,
   });
   const [competitions, setCompetitions] = useState([]);
+  const [storage, setStorage] = useState(null);
+  const [storageError, setStorageError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -53,6 +57,16 @@ export function DashboardOverviewPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => apiClient.fetchAdminStorage()
+      .then((data) => { if (active) { setStorage(data); setStorageError(''); } })
+      .catch((err) => { if (active) setStorageError(err.message); });
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
 
   const adminDisplayName = adminProfile?.fullName?.trim();
 
@@ -148,6 +162,29 @@ export function DashboardOverviewPage() {
                 </div>
               );
             })}
+          </section>
+
+          <section className="rounded-2xl border border-white/[0.08] bg-[#222222] p-6">
+            <h3 className="font-display text-2xl font-bold text-white uppercase">Storage Usage</h3>
+            {storageError && <p role="alert" className="mt-3 text-sm text-red-300">{storageError}</p>}
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {[
+                { label: 'Image Storage', icon: Images, data: storage?.images, unit: 'GB' },
+                { label: 'Database Storage', icon: HardDrive, data: storage?.database, unit: 'MB' },
+              ].map(({ label, icon: Icon, data, unit }) => {
+                const divisor = unit === 'GB' ? 1073741824 : 1048576;
+                const used = data ? (data.usedBytes / divisor).toFixed(2) : '—';
+                const remaining = data ? (data.remainingBytes / divisor).toFixed(2) : '—';
+                const warning = data && (data.warningLevel >= 70 || data.percent >= 70);
+                return <div key={label} className="rounded-xl border border-white/10 bg-[#171717] p-5">
+                  <div className="flex items-center gap-2 text-sm font-bold text-white"><Icon className="h-5 w-5 text-[#F15A24]" />{label}: {used} / {unit === 'GB' ? '1 GB' : '500 MB'}</div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className={`h-full ${warning ? 'bg-amber-400' : 'bg-[#F15A24]'}`} style={{ width: `${Math.min(100, data?.percent || 0)}%` }} /></div>
+                  <p className="mt-2 text-xs text-zinc-300">{data?.percent ?? '—'}% used · {remaining} {unit} remaining</p>
+                  {warning && <p className="mt-2 text-xs font-semibold text-amber-300">Storage warning: {data?.warningLevel || 70}% threshold reached</p>}
+                </div>;
+              })}
+            </div>
+            <p className="mt-3 text-xs text-zinc-400">Last successful measurement: {storage?.measuredAt ? new Date(storage.measuredAt).toLocaleString() : 'Waiting for measurement'}</p>
           </section>
 
           {/* Competition Overview */}

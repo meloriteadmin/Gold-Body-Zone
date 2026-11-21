@@ -8,19 +8,30 @@ import {
   submitContactEnquiry,
   verifyPublicOrderPayment,
 } from '../controllers/public.controller.js';
+import { publicMutationLimiter, publicLookupLimiter } from '../middleware/rateLimiter.js';
+import { env } from '../config/env.js';
+import { HttpError } from '../utils/httpError.js';
 
 const router = Router();
 
+function requireStagingRegistrationWindow(_req, _res, next) {
+  if (env.stagingMode && !env.stagingRegistrationsEnabled) {
+    return next(new HttpError(503, 'Staging registration tests are currently closed.'));
+  }
+  next();
+}
+
 router.get('/competitions', listPublishedCompetitions);
 router.get('/competitions/:id', getPublishedCompetition);
-router.get('/competitions/:id/check-registration', checkCompetitionRegistration);
-router.post('/competitions/:id/check-registration', checkCompetitionRegistration);
-router.post('/registrations', createPublicRegistration);
+router.post('/competitions/:id/check-registration', publicLookupLimiter, checkCompetitionRegistration);
+router.post('/registrations', publicMutationLimiter, requireStagingRegistrationWindow, createPublicRegistration);
 router.post(
   '/registrations/:id/retry-payment',
+  publicMutationLimiter,
+  requireStagingRegistrationWindow,
   retryRegistrationPayment
 );
-router.post('/payments/verify-order', verifyPublicOrderPayment);
+router.post('/payments/verify-order', publicMutationLimiter, verifyPublicOrderPayment);
 router.post('/contact/enquiry', submitContactEnquiry);
 
 export default router;
