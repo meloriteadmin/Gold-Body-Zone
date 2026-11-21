@@ -1,20 +1,10 @@
-import { useState } from 'react';
 import {
-  AlertCircle,
   CreditCard,
-  Loader2,
-  ShieldCheck,
   User,
   X,
 } from 'lucide-react';
 import { StatusBadge } from '../common/StatusBadge.jsx';
 import { formatDateTime, formatFee } from '../../utils/formatters.js';
-
-const REGISTRATION_STATUS_OPTIONS = [
-  { value: 'PENDING', label: 'Pending' },
-  { value: 'CONFIRMED', label: 'Confirmed' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-];
 
 export function getStatusBadgeVariant(status) {
   switch (status) {
@@ -41,28 +31,11 @@ export function formatStatusLabel(status, fallback = '—') {
 export function RegistrationDetailModal({
   registration,
   onClose,
-  onUpdateStatus,
 }) {
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [error, setError] = useState('');
-
   if (!registration) return null;
 
   const payment = registration.payment;
   const effectivePaymentStatus = payment?.status || registration.paymentStatus;
-
-  const handleStatusChange = async (nextStatus) => {
-    if (nextStatus === registration.registrationStatus) return;
-    setError('');
-    setUpdatingStatus(true);
-    try {
-      await onUpdateStatus(registration.id, nextStatus);
-    } catch (err) {
-      setError(err.message || 'Failed to update registration status.');
-    } finally {
-      setUpdatingStatus(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -90,19 +63,9 @@ export function RegistrationDetailModal({
 
         {/* Body */}
         <div className="flex-1 space-y-6 overflow-y-auto p-6">
-          {error && (
-            <div
-              role="alert"
-              className="flex items-center gap-2.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-xs font-medium text-red-200"
-            >
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          {/* Status Summary + Registration Status Control */}
-          <div className="flex flex-col justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#222222] p-4 sm:flex-row sm:items-center">
-            <div className="flex flex-wrap items-center gap-3">
+          {/* Status Summary (Read-Only) */}
+          <div className="rounded-xl border border-white/[0.08] bg-[#222222] p-4">
+            <div className="flex flex-wrap items-center gap-6">
               <div>
                 <p className="text-[10px] font-semibold tracking-wider text-[#A1A1AA] uppercase">
                   Registration Status
@@ -131,31 +94,6 @@ export function RegistrationDetailModal({
                 </div>
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="reg-status-select"
-                className="text-xs font-semibold text-[#A1A1AA]"
-              >
-                Update Status:
-              </label>
-              <select
-                id="reg-status-select"
-                disabled={updatingStatus}
-                value={registration.registrationStatus}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="rounded-lg border border-white/10 bg-[#171717] px-3 py-1.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none disabled:opacity-50"
-              >
-                {REGISTRATION_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {updatingStatus && (
-                <Loader2 className="h-4 w-4 animate-spin text-[#F15A24]" />
-              )}
-            </div>
           </div>
 
           {/* Participant & Competition Details */}
@@ -168,6 +106,16 @@ export function RegistrationDetailModal({
             </div>
 
             <dl className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <dt className="font-semibold text-[#A1A1AA] uppercase">
+                  Trunk Number
+                </dt>
+                <dd className="mt-1 font-mono font-bold text-[#F15A24]">
+                  {registration.trunkNumber !== null && registration.trunkNumber !== undefined
+                    ? `${registration.trunkNumber}`
+                    : 'Not Assigned'}
+                </dd>
+              </div>
               <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
                   Registration ID

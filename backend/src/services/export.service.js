@@ -167,3 +167,86 @@ export function generateRegistrationsExcel(competition, registrations = [], _opt
   XLSX.utils.book_append_sheet(wb, ws, 'Registrations');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
+
+export const TRUNK_NUMBER_HEADERS = [
+  'Trunk Number',
+  'Candidate Name',
+  'Registration ID',
+  'Category',
+  'Group',
+  'Gender',
+  'Age',
+  'Mobile Number',
+  'District',
+  'Representing',
+  'Gym Name',
+  'Registration Date',
+  'Registration Status',
+  'Payment Status',
+];
+
+/**
+ * 3. Trunk Numbers Excel (.xlsx) Generator
+ * - Column headings in Row 1
+ * - Sorted by Trunk Number ascending (unassigned candidates at the end)
+ * - Contains candidate details and assigned trunk numbers
+ */
+export function generateTrunkNumbersExcel(competition, registrations = []) {
+  const rows = [TRUNK_NUMBER_HEADERS];
+
+  const sorted = [...registrations].sort((a, b) => {
+    const numA = a.trunkNumber !== null && a.trunkNumber !== undefined ? a.trunkNumber : 999999;
+    const numB = b.trunkNumber !== null && b.trunkNumber !== undefined ? b.trunkNumber : 999999;
+    if (numA !== numB) return numA - numB;
+    return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+  });
+
+  sorted.forEach((reg) => {
+    const categoryLabel = reg.category
+      ? `${reg.category.gender || ''} - ${reg.category.name || ''}`.replace(/^[\s-]+|[\s-]+$/g, '')
+      : 'Open';
+    const groupLabel = reg.group?.name || reg.groupName || 'None';
+    const repType = reg.representingType === 'INDIVIDUAL' ? 'Individual' : 'Gym';
+    const gym = reg.representingType === 'INDIVIDUAL' ? '—' : reg.gymName || '—';
+
+    rows.push([
+      reg.trunkNumber !== null && reg.trunkNumber !== undefined ? reg.trunkNumber : 'Unassigned',
+      reg.participantName || '',
+      reg.registrationCode || reg.id || '',
+      categoryLabel,
+      groupLabel,
+      reg.gender || '',
+      reg.age !== null && reg.age !== undefined ? reg.age : '',
+      reg.mobileNumber || '',
+      reg.district || '',
+      repType,
+      gym,
+      formatReportDate(reg.createdAt),
+      reg.registrationStatus || 'PENDING',
+      reg.paymentStatus || 'PENDING',
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  ws['!cols'] = [
+    { wch: 14 }, // Trunk Number
+    { wch: 26 }, // Candidate Name
+    { wch: 20 }, // Registration ID
+    { wch: 24 }, // Category
+    { wch: 18 }, // Group
+    { wch: 10 }, // Gender
+    { wch: 8 },  // Age
+    { wch: 16 }, // Mobile Number
+    { wch: 18 }, // District
+    { wch: 14 }, // Representing
+    { wch: 24 }, // Gym Name
+    { wch: 22 }, // Registration Date
+    { wch: 18 }, // Registration Status
+    { wch: 16 }, // Payment Status
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Trunk Numbers');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}

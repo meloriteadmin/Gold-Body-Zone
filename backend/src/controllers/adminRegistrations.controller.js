@@ -453,6 +453,11 @@ export async function createManualRegistration(req, res, next) {
       : null;
 
     const registration = await prisma.$transaction(async (tx) => {
+      // Manual registrations are NOT automatically assigned trunk numbers upon creation.
+      // Numbers are assigned only when the admin clicks "Assign Trunk Numbers".
+      // If updating an existing registration that already has a trunk number, preserve it.
+      const trunkNumberToAssign = existing?.trunkNumber ? existing.trunkNumber : undefined;
+
       if (existing) {
         await tx.payment.deleteMany({ where: { registrationId: existing.id } });
         return tx.registration.update({
@@ -473,6 +478,9 @@ export async function createManualRegistration(req, res, next) {
             gymName: validated.gymName,
             registrationStatus: regStatus,
             paymentStatus: payStatus,
+            ...(trunkNumberToAssign !== undefined
+              ? { trunkNumber: trunkNumberToAssign }
+              : {}),
             isManual: true,
             paymentMethod: paymentMethodStored,
             payment: {
@@ -510,6 +518,9 @@ export async function createManualRegistration(req, res, next) {
           gymName: validated.gymName,
           registrationStatus: regStatus,
           paymentStatus: payStatus,
+          ...(trunkNumberToAssign !== undefined
+            ? { trunkNumber: trunkNumberToAssign }
+            : {}),
           isManual: true,
           paymentMethod: paymentMethodStored,
           payment: {

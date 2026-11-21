@@ -572,10 +572,6 @@ export function RegistrationsPage() {
           registration={selectedRegistration}
           isOpen={Boolean(selectedRegistration)}
           onClose={() => setSelectedRegistration(null)}
-          onStatusUpdated={() => {
-            loadRegistrations();
-            loadCompetitions();
-          }}
         />
       )}
 

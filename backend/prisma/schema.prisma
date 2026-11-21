@@ -89,12 +89,16 @@ model Competition {
   completedAt          DateTime?             @map("completed_at")
   isRegistrationClosed Boolean               @default(false) @map("is_registration_closed")
   registrationClosedAt DateTime?             @map("registration_closed_at")
+  trunkNumbersAssignedAt DateTime?             @map("trunk_numbers_assigned_at")
   isDefault            Boolean               @default(false) @map("is_default")
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
   categories           CompetitionCategory[]
   registrations        Registration[]
   photos               CompetitionPhoto[]
+  judgingSessions      JudgingSession[]
+  judges               Judge[]
+  assignedJudges       CompetitionJudge[]
 
   @@index([isPublished, eventDate])
   @@map("competitions")
@@ -155,6 +159,7 @@ model Registration {
   aadhaarConsentAt   DateTime?           @map("aadhaar_consent_at")
   registrationStatus RegistrationStatus  @default(PENDING) @map("registration_status")
   paymentStatus      PaymentStatus       @default(PENDING) @map("payment_status")
+  trunkNumber        Int?                @map("trunk_number")
   isManual           Boolean             @default(false) @map("is_manual")
   paymentMethod      String?             @map("payment_method")
   acknowledgementEmailSentAt DateTime?   @map("acknowledgement_email_sent_at")
@@ -165,9 +170,13 @@ model Registration {
   category           CompetitionCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   group              CategoryGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
   payment            Payment?
+  judgeSelections    JudgeSemifinalistSelection[]
+  judgeRankings      JudgeRanking[]
 
   @@unique([competitionId, email])
+  @@unique([competitionId, trunkNumber])
   @@index([competitionId, createdAt])
+  @@index([competitionId, trunkNumber])
   @@index([categoryId])
   @@index([groupId])
   @@index([registrationStatus])
@@ -207,4 +216,120 @@ model CompetitionPhoto {
 
   @@index([competitionId, sortOrder])
   @@map("competition_photos")
+}
+
+model Judge {
+  id             String   @id @default(uuid())
+  competitionId  String?  @map("competition_id")
+  name           String
+  email          String?
+  phone          String?
+  city           String?
+  designation    String?  @default("Judge")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  competition    Competition?                 @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  assignments    CompetitionJudge[]
+  selections     JudgeSemifinalistSelection[]
+  rankings       JudgeRanking[]
+  submissions    JudgeCategorySubmission[]
+
+  @@index([competitionId])
+  @@map("judges")
+}
+
+model CompetitionJudge {
+  id            String      @id @default(uuid())
+  competitionId String      @map("competition_id")
+  judgeId       String      @map("judge_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  judge         Judge       @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, judgeId])
+  @@index([competitionId])
+  @@index([judgeId])
+  @@map("competition_judges")
+}
+
+model JudgingSession {
+  id            String    @id @default(uuid())
+  competitionId String    @map("competition_id")
+  token         String    @unique
+  status        String    @default("ACTIVE")
+  expiresAt     DateTime  @map("expires_at")
+  revokedAt     DateTime? @map("revoked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  selections    JudgeSemifinalistSelection[]
+  rankings      JudgeRanking[]
+  submissions   JudgeCategorySubmission[]
+
+  @@index([token])
+  @@index([competitionId])
+  @@map("judging_sessions")
+}
+
+model JudgeSemifinalistSelection {
+  id             String         @id @default(uuid())
+  sessionId      String         @map("session_id")
+  judgeId        String         @map("judge_id")
+  registrationId String         @map("registration_id")
+  categoryId     String         @map("category_id")
+  groupId        String?        @map("group_id")
+  groupKey       String         @default("DEFAULT") @map("group_key")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  session        JudgingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  judge          Judge          @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+  registration   Registration   @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, judgeId, registrationId])
+  @@index([sessionId, judgeId, categoryId, groupKey])
+  @@map("judge_semifinalist_selections")
+}
+
+model JudgeRanking {
+  id             String         @id @default(uuid())
+  sessionId      String         @map("session_id")
+  judgeId        String         @map("judge_id")
+  registrationId String         @map("registration_id")
+  categoryId     String         @map("category_id")
+  groupId        String?        @map("group_id")
+  groupKey       String         @default("DEFAULT") @map("group_key")
+  rank           Int
+  title          String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  session        JudgingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  judge          Judge          @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+  registration   Registration   @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, judgeId, registrationId])
+  @@unique([sessionId, judgeId, categoryId, groupKey, rank])
+  @@index([sessionId, judgeId, categoryId, groupKey])
+  @@map("judge_rankings")
+}
+
+model JudgeCategorySubmission {
+  id          String         @id @default(uuid())
+  sessionId   String         @map("session_id")
+  judgeId     String         @map("judge_id")
+  categoryId  String         @map("category_id")
+  groupKey    String         @default("DEFAULT") @map("group_key")
+  submittedAt DateTime       @default(now()) @map("submitted_at")
+
+  session     JudgingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  judge       Judge          @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, judgeId, categoryId, groupKey])
+  @@index([sessionId, judgeId, categoryId])
+  @@map("judge_category_submissions")
 }

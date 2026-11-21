@@ -13,7 +13,8 @@ import { CompetitionsListPage } from '../pages/CompetitionsListPage.jsx';
 import { ContactPage } from '../pages/ContactPage.jsx';
 import { DashboardOverviewPage } from '../pages/DashboardOverviewPage.jsx';
 import { HistoryPage } from '../pages/HistoryPage.jsx';
-import { JudgePlaceholderPage } from '../pages/JudgePlaceholderPage.jsx';
+import { AdminJudgeManagementPage } from '../pages/AdminJudgeManagementPage.jsx';
+import { JudgeSessionPage } from '../pages/JudgeSessionPage.jsx';
 import { ManageCompetitionsPage } from '../pages/ManageCompetitionsPage.jsx';
 import { PublicHomePage } from '../pages/PublicHomePage.jsx';
 import { RegistrationsPage } from '../pages/RegistrationsPage.jsx';
@@ -52,6 +53,11 @@ export function AppRouter() {
           <Route path="/terms-and-conditions" element={<TermsPage />} />
         </Route>
 
+        {/* Dedicated Judge Portal (Direct Mobile & Desktop Access via Unique Judge Token) */}
+        <Route path="/judge/:token" element={<JudgeSessionPage />} />
+        <Route path="/judge/:token/:judgeId" element={<JudgeSessionPage />} />
+        <Route path="/judge" element={<Navigate to="/" replace />} />
+
         {/* Separate Protected Admin Portal */}
         <Route element={<AdminPortalScope />}>
           <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -63,7 +69,7 @@ export function AppRouter() {
               <Route path="competitions/:id" element={<AdminCompetitionDetailPage />} />
               <Route path="registrations" element={<RegistrationsPage />} />
               <Route path="history" element={<HistoryPage />} />
-              <Route path="judge" element={<JudgePlaceholderPage />} />
+              <Route path="judge" element={<AdminJudgeManagementPage />} />
               <Route path="profile" element={<AdminProfilePage />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Route>
