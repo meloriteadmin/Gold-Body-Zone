@@ -3,6 +3,64 @@ import {
   computeRegistrationStatus,
 } from './competitionValidation.js';
 
+export const REGISTRATION_INCLUDE = {
+  competition: {
+    select: {
+      id: true,
+      name: true,
+      competitionType: true,
+      registrationFee: true,
+    },
+  },
+  category: {
+    select: {
+      id: true,
+      name: true,
+      gender: true,
+      categoryType: true,
+    },
+  },
+  group: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+  payment: true,
+};
+
+export function formatTrunkNumbersSummary(numbers = []) {
+  if (!Array.isArray(numbers) || numbers.length === 0) {
+    return 'Not Assigned';
+  }
+
+  const valid = numbers
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .sort((a, b) => a - b);
+
+  if (valid.length === 0) {
+    return 'Not Assigned';
+  }
+
+  const ranges = [];
+  let start = valid[0];
+  let end = valid[0];
+
+  for (let i = 1; i < valid.length; i++) {
+    if (valid[i] === end + 1) {
+      end = valid[i];
+    } else {
+      ranges.push(start === end ? `${start}` : `${start}–${end}`);
+      start = valid[i];
+      end = valid[i];
+    }
+  }
+  ranges.push(start === end ? `${start}` : `${start}–${end}`);
+
+  return ranges.join(', ');
+}
+
 export function serializeCompetition(competition, options = {}) {
   if (!competition) return null;
 
@@ -13,6 +71,12 @@ export function serializeCompetition(competition, options = {}) {
     const amt = Number(r.payment?.amount ?? competition.registrationFee ?? 0);
     return sum + (Number.isNaN(amt) ? 0 : amt);
   }, 0);
+
+  const assignedTrunkNumbers = (competition.registrations || [])
+    .map((r) => r.trunkNumber)
+    .filter((n) => typeof n === 'number' && n > 0)
+    .sort((a, b) => a - b);
+  const trunkNumbersSummary = formatTrunkNumbersSummary(assignedTrunkNumbers);
 
   return {
     id: competition.id,
@@ -48,11 +112,27 @@ export function serializeCompetition(competition, options = {}) {
     registrationClosedAt: competition.registrationClosedAt
       ? competition.registrationClosedAt.toISOString()
       : null,
+    trunkNumbersAssignedAt: competition.trunkNumbersAssignedAt
+      ? competition.trunkNumbersAssignedAt instanceof Date
+        ? competition.trunkNumbersAssignedAt.toISOString()
+        : new Date(competition.trunkNumbersAssignedAt).toISOString()
+      : null,
+    trunkNumbers: assignedTrunkNumbers,
+    trunkNumbersCount: assignedTrunkNumbers.length,
+    trunkNumbersSummary,
     status: computeCompetitionStatus(competition),
     registrationStatus: computeRegistrationStatus(competition),
     isDefault: competition.isDefault,
-    createdAt: competition.createdAt.toISOString(),
-    updatedAt: competition.updatedAt.toISOString(),
+    createdAt: competition.createdAt
+      ? competition.createdAt instanceof Date
+        ? competition.createdAt.toISOString()
+        : new Date(competition.createdAt).toISOString()
+      : new Date().toISOString(),
+    updatedAt: competition.updatedAt
+      ? competition.updatedAt instanceof Date
+        ? competition.updatedAt.toISOString()
+        : new Date(competition.updatedAt).toISOString()
+      : new Date().toISOString(),
     registrationStats: {
       total: (competition.registrations || []).length,
       confirmed: (competition.registrations || []).filter(
@@ -173,6 +253,10 @@ export function serializeRegistration(registration) {
       : null,
     registrationStatus: registration.registrationStatus,
     paymentStatus: registration.paymentStatus,
+    trunkNumber:
+      registration.trunkNumber !== null && registration.trunkNumber !== undefined
+        ? Number(registration.trunkNumber)
+        : null,
     isManual: Boolean(
       registration.isManual ||
         registration.payment?.verificationSource === 'ADMIN_MANUAL'
@@ -279,6 +363,10 @@ export function serializePublicRegistration(registration) {
     gymName: registration.gymName,
     registrationStatus: registration.registrationStatus,
     paymentStatus: registration.paymentStatus,
+    trunkNumber:
+      registration.trunkNumber !== null && registration.trunkNumber !== undefined
+        ? Number(registration.trunkNumber)
+        : null,
     isManual: Boolean(
       registration.isManual ||
         registration.payment?.verificationSource === 'ADMIN_MANUAL'
@@ -344,5 +432,69 @@ export function serializePublicRegistration(registration) {
             : null,
         }
       : null,
+  };
+}
+
+export function serializeJudge(judge) {
+  if (!judge) return null;
+  return {
+    id: judge.id,
+    name: judge.name,
+    email: judge.email || null,
+    phone: judge.phone || null,
+    city: judge.city || null,
+    designation: judge.designation || 'Judge',
+    isActive: Boolean(judge.isActive),
+    createdAt: judge.createdAt instanceof Date ? judge.createdAt.toISOString() : judge.createdAt,
+    updatedAt: judge.updatedAt instanceof Date ? judge.updatedAt.toISOString() : judge.updatedAt,
+  };
+}
+
+export function serializeJudgingSession(session) {
+  if (!session) return null;
+  const isExpired = new Date(session.expiresAt) <= new Date();
+  const effectiveStatus = session.status === 'ACTIVE' && isExpired ? 'EXPIRED' : session.status;
+  return {
+    id: session.id,
+    competitionId: session.competitionId,
+    token: session.token,
+    status: effectiveStatus,
+    expiresAt: session.expiresAt instanceof Date ? session.expiresAt.toISOString() : session.expiresAt,
+    revokedAt: session.revokedAt
+      ? session.revokedAt instanceof Date
+        ? session.revokedAt.toISOString()
+        : session.revokedAt
+      : null,
+    createdAt: session.createdAt instanceof Date ? session.createdAt.toISOString() : session.createdAt,
+    updatedAt: session.updatedAt instanceof Date ? session.updatedAt.toISOString() : session.updatedAt,
+    competition: session.competition ? serializeCompetition(session.competition) : undefined,
+  };
+}
+
+export function serializeJudgeSelection(selection) {
+  if (!selection) return null;
+  return {
+    id: selection.id,
+    sessionId: selection.sessionId,
+    judgeId: selection.judgeId,
+    registrationId: selection.registrationId,
+    categoryId: selection.categoryId,
+    groupId: selection.groupId || null,
+    createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
+  };
+}
+
+export function serializeJudgeRanking(ranking) {
+  if (!ranking) return null;
+  return {
+    id: ranking.id,
+    sessionId: ranking.sessionId,
+    judgeId: ranking.judgeId,
+    registrationId: ranking.registrationId,
+    categoryId: ranking.categoryId,
+    groupId: ranking.groupId || null,
+    rank: ranking.rank,
+    title: ranking.title || null,
+    createdAt: ranking.createdAt instanceof Date ? ranking.createdAt.toISOString() : ranking.createdAt,
   };
 }
