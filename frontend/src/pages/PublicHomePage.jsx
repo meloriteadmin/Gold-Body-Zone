@@ -9,25 +9,9 @@ import {
   Trophy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import dewaliShreePoster from '../assets/images/Dewali Shree 2026 Bodybuilding Poster (1).png';
 import { CompetitionPosterCard } from '../components/public/CompetitionPosterCard.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import './PublicHomeHero.css';
-
-const EMBERS = [
-  { left: '8%', top: '34%', size: 4, opacity: 0.85 },
-  { left: '14%', top: '22%', size: 3, opacity: 0.7 },
-  { left: '19%', top: '54%', size: 5, opacity: 0.6 },
-  { left: '24%', top: '18%', size: 3, opacity: 0.65 },
-  { left: '72%', top: '20%', size: 4, opacity: 0.75 },
-  { left: '78%', top: '31%', size: 3, opacity: 0.8 },
-  { left: '84%', top: '48%', size: 5, opacity: 0.65 },
-  { left: '89%', top: '26%', size: 3, opacity: 0.7 },
-  { left: '12%', top: '76%', size: 4, opacity: 0.7 },
-  { left: '86%', top: '72%', size: 4, opacity: 0.75 },
-  { left: '46%', top: '78%', size: 3, opacity: 0.55 },
-  { left: '61%', top: '74%', size: 4, opacity: 0.6 },
-];
 
 export function PublicHomePage() {
   const [competitions, setCompetitions] = useState([]);
@@ -91,54 +75,17 @@ export function PublicHomePage() {
 
   return (
     <main className="overflow-x-hidden bg-[#101010]">
-      {/* GOLD BODY ZONE Hero Section */}
-      <section className="gymx-hero-stage" aria-label="Hero">
-        {/* Background Artwork, Fire Smoke & Floating Embers */}
-        <div className="gymx-hero-bg" aria-hidden="true">
-          <div className="gymx-spotlight" />
-          <div className="gymx-smoke-left" />
-          <div className="gymx-smoke-right" />
-
-          <div className="gymx-top-vignette" />
-
-          <div className="gymx-embers">
-            {EMBERS.map((ember, index) => (
-              <span
-                key={index}
-                className="gymx-ember"
-                style={{
-                  left: ember.left,
-                  top: ember.top,
-                  width: `${ember.size}px`,
-                  height: `${ember.size}px`,
-                  opacity: ember.opacity,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Centered Overlapping Hero Heading & Competition Posters */}
-        <div className="gymx-hero-content">
-          <h1 className="gymx-hero-title">
-            <span className="gymx-hero-line gymx-text-orange">YOUR STAGE.</span>
-            <span className="gymx-hero-line gymx-text-white">YOUR STRENGTH.</span>
-            <span className="gymx-hero-line gymx-text-orange">
-              YOUR CHAMPIONSHIP.
-            </span>
-          </h1>
-
-          {/* Dewali Shree 2026 Grand Championship Official Poster - Seamless on Hero Background */}
-          <div className="gymx-hero-poster-wrap">
-            <img
-              src={dewaliShreePoster}
-              alt="Dewali Shree 2026 - Men's Bodybuilding & Men's Physique Grand District Level Championship"
-              className="gymx-hero-poster-img"
-              loading="eager"
-              decoding="async"
-            />
-          </div>
-        </div>
+      <section className="home-poster-hero" aria-label="Dewali Shree 2026 poster">
+        <h1 className="sr-only">Dewali Shree 2026 Bodybuilding Championship</h1>
+        <img
+          src="/images/dewali-shree-2026-poster.webp?v=20261122"
+          alt="Dewali Shree 2026 bodybuilding championship poster"
+          width="1536"
+          height="1024"
+          className="home-poster-hero-image"
+          loading="eager"
+          fetchPriority="high"
+        />
       </section>
 
       {/* About Section (#171717 Band) */}
