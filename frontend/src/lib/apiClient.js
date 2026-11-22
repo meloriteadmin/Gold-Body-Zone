@@ -10,9 +10,15 @@ export class ApiError extends Error {
 
 async function request(
   path,
-  { method = 'GET', token, body, isFormData = false, timeoutMs = 0 } = {}
+  { method = 'GET', token, body, isFormData = false, timeoutMs = 0, headers: customHeaders = {} } = {}
 ) {
-  const headers = {};
+  const headers = { ...customHeaders };
+  if (token && typeof token === 'string' && token.trim() && token !== 'cookie-session') {
+    const rawToken = token.trim();
+    headers.Authorization = rawToken.startsWith('Bearer ')
+      ? rawToken
+      : `Bearer ${rawToken}`;
+  }
   if (!isFormData && body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
@@ -410,4 +416,216 @@ export const apiClient = {
     window.URL.revokeObjectURL(blobUrl);
     return { success: true, filename };
   },
+
+  // Admin Trunk Numbers
+  fetchCompetitionTrunkNumbers: (token, competitionId) =>
+    request(
+      `/admin/competitions/${encodeURIComponent(competitionId)}/trunk-numbers`,
+      { token }
+    ),
+  assignTrunkNumbers: (token, competitionId) =>
+    request(
+      `/admin/competitions/${encodeURIComponent(competitionId)}/trunk-numbers/assign`,
+      {
+        method: 'POST',
+        token,
+      }
+    ),
+  editTrunkNumber: (token, competitionId, registrationId, trunkNumber) =>
+    request(
+      `/admin/competitions/${encodeURIComponent(competitionId)}/registrations/${encodeURIComponent(registrationId)}/trunk-number`,
+      {
+        method: 'PATCH',
+        token,
+        body: { trunkNumber },
+      }
+    ),
+  downloadTrunkNumbersExport: async (token, competitionId) => {
+    const url = `${env.apiBaseUrl}/admin/competitions/${encodeURIComponent(competitionId)}/trunk-numbers/export`;
+    const headers = {};
+    if (token && typeof token === 'string' && token.trim() && token !== 'cookie-session') {
+      const rawToken = token.trim();
+      headers.Authorization = rawToken.startsWith('Bearer ')
+        ? rawToken
+        : `Bearer ${rawToken}`;
+    }
+    const res = await fetch(url, { headers, credentials: 'include' });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new ApiError(
+        res.status,
+        errData?.message || 'Trunk numbers export failed.'
+      );
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    let filename = `trunk_numbers_${competitionId}_${Date.now()}.xlsx`;
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+    if (match && match[1]) {
+      filename = decodeURIComponent(match[1]);
+    }
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+    return { success: true, filename };
+  },
+
+  // -------------------------------------------------------------
+  // JUDGE & JUDGING SESSIONS
+  // -------------------------------------------------------------
+  fetchAdminJudges: (token, { activeOnly = false, competitionId = null } = {}) => {
+    const params = new URLSearchParams();
+    if (activeOnly) params.set('active', 'true');
+    if (competitionId) params.set('competitionId', competitionId);
+    const qs = params.toString();
+    return request(`/admin/judges${qs ? `?${qs}` : ''}`, { token });
+  },
+
+  createAdminJudge: (token, payload) =>
+    request('/admin/judges', { method: 'POST', token, body: payload }),
+
+  updateAdminJudge: (token, id, payload) =>
+    request(`/admin/judges/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      token,
+      body: payload,
+    }),
+
+  deleteAdminJudge: (token, id) =>
+    request(`/admin/judges/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  assignJudgeToCompetition: (token, competitionId, judgeId) =>
+    request(`/admin/competitions/${encodeURIComponent(competitionId)}/judges/assign`, {
+      method: 'POST',
+      token,
+      body: { judgeId },
+    }),
+
+  removeJudgeFromCompetition: (token, competitionId, judgeId) =>
+    request(`/admin/competitions/${encodeURIComponent(competitionId)}/judges/${encodeURIComponent(judgeId)}`, {
+      method: 'DELETE',
+      token,
+    }),
+
+  fetchEligibleJudgingCompetitions: (token) =>
+    request('/admin/judging/competitions', { token }),
+
+  fetchCompetitionJudgingWorkspace: (token, competitionId) =>
+    request(`/admin/judging/competitions/${encodeURIComponent(competitionId)}/workspace`, {
+      token,
+    }),
+
+  startJudgingSession: (token, { competitionId, durationHours = 24 }) =>
+    request('/admin/judging/sessions', {
+      method: 'POST',
+      token,
+      body: { competitionId, durationHours },
+    }),
+
+  revokeJudgingSession: (token, sessionId) =>
+    request(`/admin/judging/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+      method: 'POST',
+      token,
+    }),
+
+  fetchJudgingSessionProgress: (token, sessionId) =>
+    request(`/admin/judging/sessions/${encodeURIComponent(sessionId)}/progress`, {
+      token,
+    }),
+
+  fetchJudgingSessionResults: (token, sessionId) =>
+    request(`/admin/judging/sessions/${encodeURIComponent(sessionId)}/results`, {
+      token,
+    }),
+
+  // -------------------------------------------------------------
+  // PUBLIC / JUDGE PORTAL
+  // -------------------------------------------------------------
+  fetchJudgingSession: (sessionToken, options = {}) => {
+    const q = new URLSearchParams();
+    if (options.judgeId) q.set('judgeId', options.judgeId);
+    if (options.key) q.set('key', options.key);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return request(`/judging/session/${encodeURIComponent(sessionToken)}${qs}`, {
+      headers: options.judgeId ? { 'x-judge-id': options.judgeId } : {},
+    });
+  },
+
+  identifyJudge: (sessionToken, judgeId, key = null) =>
+    request(`/judging/session/${encodeURIComponent(sessionToken)}/identify`, {
+      method: 'POST',
+      body: { judgeId, key },
+      headers: judgeId ? { 'x-judge-id': judgeId } : {},
+    }),
+
+  fetchJudgingProgression: (sessionToken, judgeId) => {
+    const q = new URLSearchParams();
+    if (judgeId) q.set('judgeId', judgeId);
+    return request(
+      `/judging/session/${encodeURIComponent(sessionToken)}/progression?${q.toString()}`,
+      {
+        headers: judgeId ? { 'x-judge-id': judgeId } : {},
+      }
+    );
+  },
+
+  completeEmptyCategory: (sessionToken, { judgeId, categoryId }) =>
+    request(
+      `/judging/session/${encodeURIComponent(sessionToken)}/complete-empty-category`,
+      {
+        method: 'POST',
+        body: { judgeId, categoryId },
+        headers: judgeId ? { 'x-judge-id': judgeId } : {},
+      }
+    ),
+
+  fetchCategoryJudgingData: (sessionToken, { judgeId, categoryId, groupId }) => {
+    const q = new URLSearchParams({ categoryId });
+    if (groupId) q.set('groupId', groupId);
+    if (judgeId) q.set('judgeId', judgeId);
+    return request(
+      `/judging/session/${encodeURIComponent(sessionToken)}/category-data?${q.toString()}`,
+      {
+        headers: judgeId ? { 'x-judge-id': judgeId } : {},
+      }
+    );
+  },
+
+  saveSemifinalistSelections: (
+    sessionToken,
+    { judgeId, categoryId, groupId, selectedRegistrationIds }
+  ) =>
+    request(`/judging/session/${encodeURIComponent(sessionToken)}/semifinalists`, {
+      method: 'POST',
+      body: { judgeId, categoryId, groupId, selectedRegistrationIds },
+      headers: judgeId ? { 'x-judge-id': judgeId } : {},
+    }),
+
+  saveJudgeRankings: (
+    sessionToken,
+    { judgeId, categoryId, groupId, rankings }
+  ) =>
+    request(`/judging/session/${encodeURIComponent(sessionToken)}/rankings`, {
+      method: 'POST',
+      body: { judgeId, categoryId, groupId, rankings },
+      headers: judgeId ? { 'x-judge-id': judgeId } : {},
+    }),
+
+  saveJudgeWinnerTitles: (
+    sessionToken,
+    { judgeId, categoryId, groupId, winnerTitles }
+  ) =>
+    request(`/judging/session/${encodeURIComponent(sessionToken)}/winners`, {
+      method: 'POST',
+      body: { judgeId, categoryId, groupId, winnerTitles },
+      headers: judgeId ? { 'x-judge-id': judgeId } : {},
+    }),
 };

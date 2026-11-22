@@ -32,6 +32,28 @@ import {
   updateRegistrationStatus,
   verifyRegistrationPayment,
 } from '../controllers/adminRegistrations.controller.js';
+import {
+  assignTrunkNumbersHandler,
+  editTrunkNumberHandler,
+  exportTrunkNumbersExcelHandler,
+  getCompetitionTrunkNumbersHandler,
+} from '../controllers/adminTrunkNumbers.controller.js';
+import {
+  assignJudgeToCompetitionHandler,
+  createJudgeHandler,
+  deleteJudgeHandler,
+  getActiveSessionHandler,
+  getCompetitionJudgingWorkspaceHandler,
+  getJudgeHandler,
+  getSessionProgressHandler,
+  getSessionResultsHandler,
+  listEligibleCompetitionsHandler,
+  listJudgesHandler,
+  removeJudgeFromCompetitionHandler,
+  revokeJudgingSessionHandler,
+  startJudgingSessionHandler,
+  updateJudgeHandler,
+} from '../controllers/adminJudges.controller.js';
 import { requireAdmin, requireSuperAdmin } from '../middleware/requireAdmin.js';
 import { getStorageUsage } from '../controllers/storage.controller.js';
 import { createRefund, listRefunds, reconcileRefunds } from '../controllers/refund.controller.js';
@@ -105,6 +127,25 @@ router.delete(
   deleteCompetitionPhoto
 );
 
+router.get(
+  '/competitions/:id/trunk-numbers',
+  getCompetitionTrunkNumbersHandler
+);
+router.post(
+  '/competitions/:id/trunk-numbers/assign',
+  adminSensitiveLimiter,
+  assignTrunkNumbersHandler
+);
+router.patch(
+  '/competitions/:id/registrations/:registrationId/trunk-number',
+  adminSensitiveLimiter,
+  editTrunkNumberHandler
+);
+router.get(
+  '/competitions/:id/trunk-numbers/export',
+  exportTrunkNumbersExcelHandler
+);
+
 router.post('/competitions/:id/categories', requireNonessentialDatabaseHeadroom, addCategory);
 router.patch(
   '/competitions/:id/categories/:categoryId',
@@ -147,5 +188,25 @@ router.post(
 router.get('/registrations/:id/refunds', listRefunds);
 router.post('/registrations/:id/refunds', adminSensitiveLimiter, requireSuperAdmin, createRefund);
 router.post('/registrations/:id/refunds/reconcile', adminSensitiveLimiter, requireSuperAdmin, reconcileRefunds);
+
+// Judge Management Routes
+router.get('/judges', listJudgesHandler);
+router.post('/judges', adminSensitiveLimiter, createJudgeHandler);
+router.get('/judges/:id', getJudgeHandler);
+router.put('/judges/:id', adminSensitiveLimiter, updateJudgeHandler);
+router.delete('/judges/:id', adminSensitiveLimiter, deleteJudgeHandler);
+
+// Competition-Specific Judges
+router.post('/competitions/:id/judges/assign', adminSensitiveLimiter, assignJudgeToCompetitionHandler);
+router.delete('/competitions/:id/judges/:judgeId', adminSensitiveLimiter, removeJudgeFromCompetitionHandler);
+
+// Judging Session Management Routes
+router.get('/judging/competitions', listEligibleCompetitionsHandler);
+router.get('/judging/competitions/:id/workspace', getCompetitionJudgingWorkspaceHandler);
+router.post('/judging/sessions', adminSensitiveLimiter, startJudgingSessionHandler);
+router.post('/judging/sessions/:id/revoke', adminSensitiveLimiter, revokeJudgingSessionHandler);
+router.get('/judging/sessions/competition/:competitionId', getActiveSessionHandler);
+router.get('/judging/sessions/:id/progress', getSessionProgressHandler);
+router.get('/judging/sessions/:id/results', getSessionResultsHandler);
 
 export default router;

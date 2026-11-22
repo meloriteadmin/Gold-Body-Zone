@@ -84,7 +84,7 @@ export function ManualRegistrationModal({
   const [groupId, setGroupId] = useState('');
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
-  const [district, setDistrict] = useState('Nashik');
+  const [district, setDistrict] = useState('');
   const [representingType, setRepresentingType] = useState('GYM');
   const [gymName, setGymName] = useState('');
 
@@ -287,7 +287,9 @@ export function ManualRegistrationModal({
       }
     }
 
-    if (!district) errs.district = 'Please select a district.';
+    if (!district || !district.trim() || district.trim().length < 2) {
+      errs.district = 'District must be at least 2 characters.';
+    }
     if (
       representingType === 'GYM' &&
       (!gymName.trim() || gymName.trim().length < 2)
@@ -329,7 +331,7 @@ export function ManualRegistrationModal({
         : weightKg
           ? Number.parseFloat(weightKg)
           : undefined,
-      district,
+      district: district.trim(),
       representingType,
       gymName:
         representingType === 'GYM'
@@ -717,20 +719,19 @@ export function ManualRegistrationModal({
                   <label className="mb-1 block text-xs font-medium text-zinc-300">
                     District (Zilha) *
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={district}
                     onChange={(e) => {
                       setDistrict(e.target.value);
                       clearFieldError('district');
                     }}
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white focus:border-[#F15A24] focus:outline-none"
-                  >
-                    {MAHARASHTRA_DISTRICTS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g. Nashik, Pune, Mumbai"
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+                  />
+                  {fieldErrors.district && (
+                    <p className="mt-1 text-[11px] text-red-400">{fieldErrors.district}</p>
+                  )}
                 </div>
               </div>
             </div>

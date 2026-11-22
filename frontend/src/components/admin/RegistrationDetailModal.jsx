@@ -3,7 +3,6 @@ import {
   AlertCircle,
   CreditCard,
   Loader2,
-  ShieldCheck,
   User,
   X,
 } from 'lucide-react';
@@ -68,7 +67,7 @@ export function RegistrationDetailModal({
   const effectivePaymentStatus = payment?.status || registration.paymentStatus;
 
   const handleStatusChange = async (nextStatus) => {
-    if (nextStatus === registration.registrationStatus) return;
+    if (!onUpdateStatus || nextStatus === registration.registrationStatus) return;
     setError('');
     setUpdatingStatus(true);
     try {
@@ -143,9 +142,9 @@ export function RegistrationDetailModal({
             </div>
           )}
 
-          {/* Status Summary + Registration Status Control */}
+          {/* Status Summary + Optional Registration Status Control */}
           <div className="flex flex-col justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#222222] p-4 sm:flex-row sm:items-center">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-6">
               <div>
                 <p className="text-[10px] font-semibold tracking-wider text-[#A1A1AA] uppercase">
                   Registration Status
@@ -175,30 +174,32 @@ export function RegistrationDetailModal({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="reg-status-select"
-                className="text-xs font-semibold text-[#A1A1AA]"
-              >
-                Update Status:
-              </label>
-              <select
-                id="reg-status-select"
-                disabled={updatingStatus}
-                value={registration.registrationStatus}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="rounded-lg border border-white/10 bg-[#171717] px-3 py-1.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none disabled:opacity-50"
-              >
-                {REGISTRATION_STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {updatingStatus && (
-                <Loader2 className="h-4 w-4 animate-spin text-[#F15A24]" />
-              )}
-            </div>
+            {onUpdateStatus && (
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="reg-status-select"
+                  className="text-xs font-semibold text-[#A1A1AA]"
+                >
+                  Update Status:
+                </label>
+                <select
+                  id="reg-status-select"
+                  disabled={updatingStatus}
+                  value={registration.registrationStatus}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-[#171717] px-3 py-1.5 text-xs font-semibold text-white focus:border-[#F15A24] focus:outline-none disabled:opacity-50"
+                >
+                  {REGISTRATION_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {updatingStatus && (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#F15A24]" />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Participant & Competition Details */}
@@ -211,6 +212,16 @@ export function RegistrationDetailModal({
             </div>
 
             <dl className="mt-4 grid grid-cols-1 gap-4 text-xs sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <dt className="font-semibold text-[#A1A1AA] uppercase">
+                  Trunk Number
+                </dt>
+                <dd className="mt-1 font-mono font-bold text-[#F15A24]">
+                  {registration.trunkNumber !== null && registration.trunkNumber !== undefined
+                    ? `${registration.trunkNumber}`
+                    : 'Not Assigned'}
+                </dd>
+              </div>
               <div>
                 <dt className="font-semibold text-[#A1A1AA] uppercase">
                   Registration ID

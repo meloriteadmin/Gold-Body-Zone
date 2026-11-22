@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Calendar,
+  Check,
   CheckCircle2,
   ChevronDown,
   Clock,
@@ -13,6 +14,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  Hash,
   Image as ImageIcon,
   Loader2,
   Lock,
@@ -23,6 +25,7 @@ import {
   Search,
   Upload,
   Users,
+  X,
 } from 'lucide-react';
 import { CompetitionFormModal } from '../components/admin/CompetitionFormModal.jsx';
 import { EventPhotosManager } from '../components/admin/EventPhotosManager.jsx';
@@ -78,14 +81,38 @@ export function AdminCompetitionDetailPage() {
   const [paySearch, setPaySearch] = useState('');
   const [payStatusFilter, setPayStatusFilter] = useState('');
 
+  // Trunk Numbers state
+  const [assigningTrunkNumbers, setAssigningTrunkNumbers] = useState(false);
+  const [exportingTrunkNumbers, setExportingTrunkNumbers] = useState(false);
+  const [editingTrunkId, setEditingTrunkId] = useState(null);
+  const [inlineTrunkVal, setInlineTrunkVal] = useState('');
+  const [inlineTrunkError, setInlineTrunkError] = useState('');
+  const [inlineTrunkLoading, setInlineTrunkLoading] = useState(false);
+  const [trunkSearchQuery, setTrunkSearchQuery] = useState('');
+
   const loadCompetition = useCallback(async () => {
     if (!accessToken || !id) return;
     setLoading(true);
     setError('');
     try {
-      const data = await apiClient.fetchAdminCompetition(accessToken, id);
+      const [data, trunkData] = await Promise.all([
+        apiClient.fetchAdminCompetition(accessToken, id),
+        apiClient
+          .fetchCompetitionTrunkNumbers(accessToken, id)
+          .catch(() => null),
+      ]);
       setCompetition(data.competition);
-      setRegistrations(data.registrations || []);
+
+      let allRegistrations = data.registrations || [];
+      if (trunkData?.candidates?.length) {
+        const trunkMap = new Map(
+          trunkData.candidates.map((c) => [c.id, c.trunkNumber])
+        );
+        allRegistrations = allRegistrations.map((r) =>
+          trunkMap.has(r.id) ? { ...r, trunkNumber: trunkMap.get(r.id) } : r
+        );
+      }
+      setRegistrations(allRegistrations);
     } catch (err) {
       setError(err.message || 'Failed to load competition details.');
     } finally {
@@ -331,6 +358,18 @@ export function AdminCompetitionDetailPage() {
     }
   };
 
+  const handleExportTrunkNumbers = async () => {
+    setExportingTrunkNumbers(true);
+    setError('');
+    try {
+      await apiClient.downloadTrunkNumbersExport(accessToken, competition.id);
+    } catch (err) {
+      setError(err.message || 'Failed to export trunk numbers.');
+    } finally {
+      setExportingTrunkNumbers(false);
+    }
+  };
+
   // -------------------------------------------------------------
   // COMPUTED STATES & METRICS
   // -------------------------------------------------------------
@@ -341,6 +380,18 @@ export function AdminCompetitionDetailPage() {
   const regStatus = useMemo(
     () => (competition ? getRegistrationStatus(competition) : 'Closed'),
     [competition]
+  );
+  const isCompleted = useMemo(
+    () => Boolean(competition?.isCompleted || compStatus === 'Completed'),
+    [competition, compStatus]
+  );
+  const isRegClosed = useMemo(
+    () => regStatus === 'Closed',
+    [regStatus]
+  );
+  const canAssignTrunkNumbers = useMemo(
+    () => isRegClosed && !isCompleted,
+    [isRegClosed, isCompleted]
   );
   const deadlinePassed = useMemo(
     () =>
@@ -407,7 +458,11 @@ export function AdminCompetitionDetailPage() {
         const nameMatch = reg.participantName?.toLowerCase().includes(query);
         const emailMatch = reg.email?.toLowerCase().includes(query);
         const codeMatch = reg.registrationCode?.toLowerCase().includes(query);
-        return nameMatch || emailMatch || codeMatch;
+        const trunkMatch =
+          reg.trunkNumber !== null &&
+          reg.trunkNumber !== undefined &&
+          String(reg.trunkNumber).includes(query);
+        return nameMatch || emailMatch || codeMatch || trunkMatch;
       }
       return true;
     });
@@ -420,6 +475,133 @@ export function AdminCompetitionDetailPage() {
     regStatusFilter,
     regSearch,
   ]);
+
+  const eligibleCandidates = useMemo(() => {
+    return registrations.filter(
+      (r) =>
+        (r.registrationStatus === 'CONFIRMED' && r.paymentStatus === 'PAID') ||
+        (r.trunkNumber !== null && r.trunkNumber !== undefined)
+    );
+  }, [registrations]);
+
+  const assignedTrunkCount = useMemo(() => {
+    return registrations.filter(
+      (r) => r.trunkNumber !== null && r.trunkNumber !== undefined
+    ).length;
+  }, [registrations]);
+
+  const filteredTrunkRegistrations = useMemo(() => {
+    let list = [...eligibleCandidates];
+    if (trunkSearchQuery.trim()) {
+      const q = trunkSearchQuery.trim().toLowerCase();
+      list = list.filter((r) => {
+        const nameMatch = r.participantName?.toLowerCase().includes(q);
+        const codeMatch = r.registrationCode?.toLowerCase().includes(q);
+        const trunkMatch =
+          r.trunkNumber !== null && String(r.trunkNumber).includes(q);
+        return nameMatch || codeMatch || trunkMatch;
+      });
+    }
+    return list.sort((a, b) => {
+      const numA =
+        a.trunkNumber !== null && a.trunkNumber !== undefined
+          ? a.trunkNumber
+          : 999999;
+      const numB =
+        b.trunkNumber !== null && b.trunkNumber !== undefined
+          ? b.trunkNumber
+          : 999999;
+      if (numA !== numB) return numA - numB;
+      return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+    });
+  }, [eligibleCandidates, trunkSearchQuery]);
+
+  const handleAssignTrunkNumbers = async () => {
+    if (isCompleted) {
+      setError('Trunk numbers cannot be assigned for a completed competition.');
+      return;
+    }
+    if (!isRegClosed) {
+      setError('Trunk numbers can only be bulk assigned after registration has closed.');
+      return;
+    }
+
+    setAssigningTrunkNumbers(true);
+    setError('');
+    setSuccessMsg('');
+    try {
+      const res = await apiClient.assignTrunkNumbers(accessToken, competition.id);
+      setSuccessMsg(
+        res.message ||
+          (res.newlyAssignedCount > 0
+            ? `Successfully assigned trunk numbers to ${res.newlyAssignedCount} candidate(s).`
+            : 'All eligible candidates already have trunk numbers assigned.')
+      );
+      await loadCompetition();
+      setTab('trunk-numbers');
+    } catch (err) {
+      setError(err.message || 'Failed to assign trunk numbers.');
+    } finally {
+      setAssigningTrunkNumbers(false);
+    }
+  };
+
+  const handleStartInlineEdit = (candidate) => {
+    setEditingTrunkId(candidate.id);
+    setInlineTrunkVal(
+      candidate.trunkNumber !== null && candidate.trunkNumber !== undefined
+        ? String(candidate.trunkNumber)
+        : ''
+    );
+    setInlineTrunkError('');
+  };
+
+  const handleCancelInlineEdit = () => {
+    setEditingTrunkId(null);
+    setInlineTrunkVal('');
+    setInlineTrunkError('');
+  };
+
+  const handleSaveInlineEdit = async (registrationId) => {
+    const num = Number(inlineTrunkVal);
+    if (!Number.isInteger(num) || num <= 0) {
+      setInlineTrunkError('Enter a positive whole number greater than 0.');
+      return;
+    }
+
+    const duplicate = eligibleCandidates.find(
+      (r) => r.id !== registrationId && r.trunkNumber === num
+    );
+    if (duplicate) {
+      setInlineTrunkError(
+        `Number ${num} is already assigned to "${duplicate.participantName}".`
+      );
+      return;
+    }
+
+    setInlineTrunkLoading(true);
+    setInlineTrunkError('');
+    try {
+      const res = await apiClient.editTrunkNumber(
+        accessToken,
+        competition.id,
+        registrationId,
+        num
+      );
+      setSuccessMsg(res.message || `Trunk number updated to ${num}.`);
+      setRegistrations((prev) =>
+        prev.map((r) =>
+          r.id === registrationId ? { ...r, trunkNumber: num } : r
+        )
+      );
+      setEditingTrunkId(null);
+      setInlineTrunkVal('');
+    } catch (err) {
+      setInlineTrunkError(err.message || 'Failed to update trunk number.');
+    } finally {
+      setInlineTrunkLoading(false);
+    }
+  };
 
   const handleExport = async (format) => {
     if (!accessToken || !id) return;
@@ -505,12 +687,6 @@ export function AdminCompetitionDetailPage() {
           registration={selectedReg}
           isOpen={Boolean(selectedReg)}
           onClose={() => setSelectedReg(null)}
-          onStatusUpdated={(updated) => {
-            setRegistrations((prev) =>
-              prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
-            );
-            setSelectedReg(null);
-          }}
         />
       )}
 
@@ -732,6 +908,32 @@ export function AdminCompetitionDetailPage() {
               ? 'Mark as In-Progress'
               : 'Mark as Completed'}
           </button>
+
+          {/* Assign Trunk Numbers Button */}
+          <button
+            type="button"
+            onClick={handleAssignTrunkNumbers}
+            disabled={actionLoading || assigningTrunkNumbers || !canAssignTrunkNumbers}
+            title={
+              isCompleted
+                ? 'Trunk numbers cannot be assigned for a completed competition.'
+                : !isRegClosed
+                  ? 'Trunk numbers can only be bulk assigned after registration has closed.'
+                  : 'Bulk assign trunk numbers to all eligible confirmed & paid candidates.'
+            }
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+              canAssignTrunkNumbers
+                ? 'border-[#F15A24]/40 bg-[#F15A24]/15 text-[#F15A24] hover:bg-[#F15A24]/25'
+                : 'border-white/10 bg-white/5 text-zinc-500 cursor-not-allowed opacity-60'
+            }`}
+          >
+            {assigningTrunkNumbers ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Hash className="h-3.5 w-3.5" />
+            )}
+            <span>Assign Trunk Numbers</span>
+          </button>
         </div>
       </div>
 
@@ -855,6 +1057,11 @@ export function AdminCompetitionDetailPage() {
               label: `Event Photos (${competition.photos?.length || 0})`,
               icon: ImageIcon,
             },
+            {
+              id: 'trunk-numbers',
+              label: `Trunk Numbers (${assignedTrunkCount})`,
+              icon: Hash,
+            },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -878,7 +1085,7 @@ export function AdminCompetitionDetailPage() {
       </section>
 
       {/* Key Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div className="rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-5">
           <p className="text-[11px] font-bold tracking-wider text-[#A1A1AA] uppercase">
             Total Registrations
@@ -909,6 +1116,17 @@ export function AdminCompetitionDetailPage() {
           </p>
           <p className="font-display mt-2 text-3xl font-extrabold text-amber-400 tabular-nums">
             {stats.unpaid}
+          </p>
+        </div>
+        <div className="col-span-2 rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-5 sm:col-span-1">
+          <p className="text-[11px] font-bold tracking-wider text-[#F15A24] uppercase">
+            Trunk Numbers
+          </p>
+          <p className="font-display mt-2 text-3xl font-extrabold text-[#F15A24] tabular-nums">
+            {assignedTrunkCount}
+            <span className="text-xs font-semibold text-zinc-500">
+              /{eligibleCandidates.length}
+            </span>
           </p>
         </div>
       </div>
@@ -1094,6 +1312,7 @@ export function AdminCompetitionDetailPage() {
                       <th className="px-4 py-3.5">Registered Date</th>
                       <th className="px-4 py-3.5">Payment</th>
                       <th className="px-4 py-3.5">Reg Status</th>
+                      <th className="px-4 py-3.5">Trunk Number</th>
                       <th className="px-4 py-3.5 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -1101,7 +1320,11 @@ export function AdminCompetitionDetailPage() {
                     {filteredRegistrations.map((reg) => (
                       <tr
                         key={reg.id}
-                        className="transition-colors hover:bg-white/[0.02]"
+                        className={`transition-colors ${
+                          editingTrunkId === reg.id
+                            ? 'bg-[#F15A24]/[0.06]'
+                            : 'hover:bg-white/[0.02]'
+                        }`}
                       >
                         <td className="px-4 py-3.5 font-bold text-white">
                           <div className="flex items-center gap-1.5">
@@ -1162,14 +1385,95 @@ export function AdminCompetitionDetailPage() {
                             {reg.registrationStatus}
                           </span>
                         </td>
+                        <td className="px-4 py-3.5">
+                          {editingTrunkId === reg.id ? (
+                            <div className="flex flex-col gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={inlineTrunkVal}
+                                onChange={(e) => {
+                                  setInlineTrunkVal(e.target.value);
+                                  if (inlineTrunkError) setInlineTrunkError('');
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveInlineEdit(reg.id);
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleCancelInlineEdit();
+                                  }
+                                }}
+                                autoFocus
+                                placeholder="Number"
+                                className="h-8 w-20 rounded-lg border border-[#F15A24] bg-[#1a1a1a] px-2.5 text-xs font-bold text-white shadow-inner focus:outline-none focus:ring-1 focus:ring-[#F15A24]"
+                              />
+                              {inlineTrunkError && (
+                                <span className="max-w-[160px] text-[10px] font-medium text-red-400">
+                                  {inlineTrunkError}
+                                </span>
+                              )}
+                            </div>
+                          ) : reg.trunkNumber !== null &&
+                            reg.trunkNumber !== undefined ? (
+                            <span className="inline-flex items-center rounded-lg border border-[#F15A24]/40 bg-[#F15A24]/10 px-2.5 py-1 font-mono text-xs font-extrabold text-[#F15A24]">
+                              {reg.trunkNumber}
+                            </span>
+                          ) : (
+                            <span className="font-mono text-xs text-zinc-500">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedReg(reg)}
-                            className="rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1 text-xs font-semibold text-zinc-300 transition-colors hover:text-white"
-                          >
-                            Details
-                          </button>
+                          {editingTrunkId === reg.id ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveInlineEdit(reg.id)}
+                                disabled={inlineTrunkLoading}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+                                title="Save trunk number"
+                              >
+                                {inlineTrunkLoading ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-3 w-3" />
+                                )}
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelInlineEdit}
+                                disabled={inlineTrunkLoading}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:text-white disabled:opacity-50"
+                                title="Cancel"
+                              >
+                                <X className="h-3 w-3" />
+                                <span>Cancel</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartInlineEdit(reg)}
+                                disabled={Boolean(editingTrunkId)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition-colors hover:border-[#F15A24]/40 hover:text-white disabled:opacity-40"
+                                title="Edit trunk number"
+                              >
+                                <Pencil className="h-3 w-3 text-[#F15A24]" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedReg(reg)}
+                                className="rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition-colors hover:text-white"
+                              >
+                                Details
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1304,6 +1608,300 @@ export function AdminCompetitionDetailPage() {
             setCompetition((prev) => ({ ...prev, photos }))
           }
         />
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 4: TRUNK NUMBERS */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'trunk-numbers' && (
+        <div className="space-y-4">
+          {/* Header Summary & Action Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-5">
+            <div className="flex flex-wrap items-center gap-6">
+              <div>
+                <p className="text-[10px] font-bold tracking-wider text-[#A1A1AA] uppercase">
+                  Total Eligible Candidates
+                </p>
+                <p className="font-display mt-0.5 text-2xl font-extrabold text-white">
+                  {eligibleCandidates.length}
+                </p>
+              </div>
+
+              <div className="h-8 w-px bg-white/10" />
+
+              <div>
+                <p className="text-[10px] font-bold tracking-wider text-emerald-400 uppercase">
+                  Total Assigned Numbers
+                </p>
+                <p className="font-display mt-0.5 text-2xl font-extrabold text-emerald-400">
+                  {assignedTrunkCount}
+                </p>
+              </div>
+
+              <div className="h-8 w-px bg-white/10" />
+
+              <div>
+                <p className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">
+                  Unassigned Candidates
+                </p>
+                <p className="font-display mt-0.5 text-2xl font-extrabold text-amber-400">
+                  {Math.max(0, eligibleCandidates.length - assignedTrunkCount)}
+                </p>
+              </div>
+            </div>
+
+            {/* Actions: Assign Button & Export Button */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleAssignTrunkNumbers}
+                disabled={assigningTrunkNumbers || !canAssignTrunkNumbers}
+                title={
+                  isCompleted
+                    ? 'Trunk numbers cannot be assigned for a completed competition.'
+                    : !isRegClosed
+                      ? 'Bulk trunk number assignment is enabled only after registration has closed.'
+                      : 'Bulk assign trunk numbers to all eligible confirmed & paid candidates.'
+                }
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold uppercase transition-all ${
+                  canAssignTrunkNumbers
+                    ? 'bg-gradient-to-r from-[#F15A24] to-[#E94B16] text-white shadow-md shadow-[#F15A24]/20 hover:brightness-110'
+                    : 'border border-white/10 bg-[#222222] text-zinc-500 cursor-not-allowed opacity-60'
+                }`}
+              >
+                {assigningTrunkNumbers ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Hash className="h-4 w-4" />
+                )}
+                <span>Assign Trunk Numbers</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportTrunkNumbers}
+                disabled={exportingTrunkNumbers || eligibleCandidates.length === 0}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[#222222] px-4 py-2.5 text-xs font-bold text-white uppercase transition-colors hover:bg-white/5 disabled:opacity-50"
+              >
+                {exportingTrunkNumbers ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-[#F15A24]" />
+                ) : (
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-400" />
+                )}
+                <span>Export Excel (.xlsx)</span>
+              </button>
+            </div>
+          </div>
+
+          {isCompleted && (
+            <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-xs font-medium text-blue-200">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-400" />
+              <span>
+                This competition is marked as <strong>Completed</strong>. Trunk number assignment is finalized and locked.
+              </span>
+            </div>
+          )}
+
+          {!isRegClosed && !isCompleted && (
+            <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-medium text-amber-200">
+              <Clock className="h-4 w-4 shrink-0 text-amber-400" />
+              <span>
+                Registration is currently <strong>{regStatus}</strong>. Bulk trunk number assignment can only be initiated after registration has closed.
+              </span>
+            </div>
+          )}
+
+          {/* Search Bar */}
+          <div className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-3">
+            <div className="relative flex-1">
+              <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={trunkSearchQuery}
+                onChange={(e) => setTrunkSearchQuery(e.target.value)}
+                placeholder="Search candidates by name, registration code, or trunk number..."
+                className="h-9 w-full rounded-xl border border-white/10 bg-[#222222] pr-3 pl-9 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
+              />
+            </div>
+            {trunkSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setTrunkSearchQuery('')}
+                className="rounded-lg border border-white/10 bg-[#222222] px-3 py-1.5 text-xs text-zinc-400 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1a1a1a]">
+            {filteredTrunkRegistrations.length === 0 ? (
+              <div className="p-12 text-center text-xs text-[#A1A1AA]">
+                {trunkSearchQuery
+                  ? 'No matching candidates found for this search.'
+                  : 'No eligible candidates available for trunk number assignment yet.'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs whitespace-nowrap">
+                  <thead>
+                    <tr className="border-b border-white/[0.08] bg-[#222222] text-[11px] font-bold tracking-wider text-[#A1A1AA] uppercase">
+                      <th className="px-4 py-3.5">Trunk Number</th>
+                      <th className="px-4 py-3.5">Candidate Name</th>
+                      <th className="px-4 py-3.5">Registration ID</th>
+                      <th className="px-4 py-3.5">Category &amp; Division</th>
+                      <th className="px-4 py-3.5">Payment</th>
+                      <th className="px-4 py-3.5">Reg Status</th>
+                      <th className="px-4 py-3.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {filteredTrunkRegistrations.map((cand) => (
+                      <tr
+                        key={cand.id}
+                        className={`transition-colors ${
+                          editingTrunkId === cand.id
+                            ? 'bg-[#F15A24]/[0.06]'
+                            : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <td className="px-4 py-3.5">
+                          {editingTrunkId === cand.id ? (
+                            <div className="flex flex-col gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={inlineTrunkVal}
+                                onChange={(e) => {
+                                  setInlineTrunkVal(e.target.value);
+                                  if (inlineTrunkError) setInlineTrunkError('');
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveInlineEdit(cand.id);
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleCancelInlineEdit();
+                                  }
+                                }}
+                                autoFocus
+                                placeholder="Number"
+                                className="h-8 w-24 rounded-lg border border-[#F15A24] bg-[#1a1a1a] px-2.5 text-xs font-bold text-white shadow-inner focus:outline-none focus:ring-1 focus:ring-[#F15A24]"
+                              />
+                              {inlineTrunkError && (
+                                <span className="max-w-[200px] text-[10px] font-medium text-red-400">
+                                  {inlineTrunkError}
+                                </span>
+                              )}
+                            </div>
+                          ) : cand.trunkNumber !== null &&
+                            cand.trunkNumber !== undefined ? (
+                            <span className="inline-flex items-center rounded-lg border border-[#F15A24]/40 bg-[#F15A24]/10 px-2.5 py-1 font-mono text-xs font-extrabold text-[#F15A24]">
+                              {cand.trunkNumber}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-zinc-500">
+                              Unassigned
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <p className="font-bold text-white">
+                            {cand.participantName}
+                          </p>
+                          <p className="text-[11px] text-zinc-500">
+                            {cand.district} •{' '}
+                            {cand.representingType === 'INDIVIDUAL'
+                              ? 'Individual'
+                              : cand.gymName || 'Gym'}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3.5 font-mono text-xs text-zinc-300">
+                          {cand.registrationCode}
+                        </td>
+                        <td className="px-4 py-3.5 text-zinc-300">
+                          <p className="font-semibold text-white">
+                            {cand.category?.name || 'Open'}
+                          </p>
+                          <p className="text-[11px] text-zinc-500">
+                            {cand.group?.name ||
+                              cand.groupName ||
+                              'No Group'}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+                              cand.paymentStatus === 'PAID'
+                                ? 'bg-emerald-500/10 text-emerald-400'
+                                : 'bg-amber-500/10 text-amber-400'
+                            }`}
+                          >
+                            {cand.paymentStatus}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <StatusBadge
+                            variant={
+                              cand.registrationStatus === 'CONFIRMED'
+                                ? 'confirmed'
+                                : 'pending'
+                            }
+                          >
+                            {cand.registrationStatus}
+                          </StatusBadge>
+                        </td>
+                        <td className="px-4 py-3.5 text-right">
+                          {editingTrunkId === cand.id ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveInlineEdit(cand.id)}
+                                disabled={inlineTrunkLoading}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/25 disabled:opacity-50"
+                                title="Save trunk number"
+                              >
+                                {inlineTrunkLoading ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-3 w-3" />
+                                )}
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelInlineEdit}
+                                disabled={inlineTrunkLoading}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:text-white disabled:opacity-50"
+                                title="Cancel edit"
+                              >
+                                <X className="h-3 w-3" />
+                                <span>Cancel</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartInlineEdit(cand)}
+                              disabled={Boolean(editingTrunkId)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#222222] px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition-colors hover:border-[#F15A24]/40 hover:text-white disabled:opacity-40"
+                            >
+                              <Pencil className="h-3 w-3 text-[#F15A24]" />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Edit Competition Modal */}

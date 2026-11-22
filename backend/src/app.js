@@ -7,6 +7,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFound.js';
 import apiRoutes from './routes/index.js';
 import healthRoutes from './routes/health.routes.js';
+import judgingRoutes from './routes/judging.routes.js';
+import publicRoutes from './routes/public.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
 
 export function createApp() {
   const app = express();
@@ -45,7 +49,13 @@ export function createApp() {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'X-Judge-Id',
+        'x-judge-id',
+      ],
       exposedHeaders: [
         'RateLimit-Limit',
         'RateLimit-Remaining',
@@ -68,6 +78,12 @@ export function createApp() {
 
   app.use('/health', healthRoutes);
   app.use('/api', apiRoutes);
+
+  // Direct aliases to support callers requesting /public, /admin, /judging, or /webhooks directly
+  app.use('/public', publicRoutes);
+  app.use('/admin', adminRoutes);
+  app.use('/judging', judgingRoutes);
+  app.use('/webhooks', webhookRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

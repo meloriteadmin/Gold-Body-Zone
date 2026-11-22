@@ -30,6 +30,7 @@ export const ADMIN_COMPETITION_INCLUDE = {
       id: true,
       registrationStatus: true,
       paymentStatus: true,
+      trunkNumber: true,
     },
   },
   photos: {
