@@ -308,7 +308,7 @@ export async function listPublishedCompetitions(_req, res, next) {
       orderBy: [{ eventDate: 'asc' }, { createdAt: 'asc' }],
     });
 
-    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    res.set('Cache-Control', 'no-store');
     res.status(200).json({
       competitions: competitions.map((comp) =>
         serializeCompetition(comp, { filterIneligible: true })
@@ -350,7 +350,7 @@ export async function getPublishedCompetition(req, res, next) {
       throw new HttpError(404, 'Competition not found.');
     }
 
-    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    res.set('Cache-Control', 'no-store');
     res.status(200).json({
       competition: serializeCompetition(competition, { filterIneligible: true }),
     });

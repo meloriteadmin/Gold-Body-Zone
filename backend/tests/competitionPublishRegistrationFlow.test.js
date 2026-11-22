@@ -21,28 +21,28 @@ describe('Competition Publication & Registration Flow Across All Competition Typ
   const pastEventDate = new Date();
   pastEventDate.setDate(pastEventDate.getDate() - 10);
 
-  // 1. Creation as Draft
-  describe('1. New Competitions Always Created as Draft', () => {
+  // 1. Creation appears publicly
+  describe('1. New Competitions Are Published on Creation', () => {
     for (const compType of FIXED_COMPETITION_TYPES) {
-      it(`creates new competition of type "${compType}" as Draft even if isPublished is passed`, () => {
+      it(`creates new competition of type "${compType}" as published`, () => {
         const payload = {
           name: `Test Event - ${compType}`,
           competitionType: compType,
           eventDate: futureEventDate.toISOString(),
           registrationDeadline: futureDeadline.toISOString(),
           registrationFee: 500,
-          isPublished: true, // Attempt to force publish on creation
+          isPublished: false, // A new competition is public regardless of this input.
         };
 
         const { data } = validateCompetitionPayload(payload, { isUpdate: false });
 
-        assert.equal(data.isPublished, false, 'New competition must be saved as Draft (isPublished: false)');
-        assert.equal(data.publishedAt, null, 'publishedAt must be null on creation');
+        assert.equal(data.isPublished, true);
+        assert.ok(data.publishedAt instanceof Date);
         assert.equal(data.isCompleted, false, 'isCompleted must be false on creation');
         assert.equal(data.isRegistrationClosed, false, 'isRegistrationClosed must be false on creation');
 
         const status = computeCompetitionStatus(data);
-        assert.equal(status, 'DRAFT');
+        assert.equal(status, 'PUBLISHED');
       });
     }
   });
@@ -239,8 +239,8 @@ describe('Competition Publication & Registration Flow Across All Competition Typ
   describe('4. Uniform Publication & Registration Across All 4 Competition Types', () => {
     for (const compType of FIXED_COMPETITION_TYPES) {
       it(`enforces identical publication and registration flow for "${compType}"`, () => {
-        // Step 1: Created as Draft
-        const { data: draftData } = validateCompetitionPayload({
+        // Step 1: Created and visible publicly
+        const { data: publishedComp } = validateCompetitionPayload({
           name: `Championship - ${compType}`,
           competitionType: compType,
           eventDate: futureEventDate.toISOString(),
@@ -248,20 +248,11 @@ describe('Competition Publication & Registration Flow Across All Competition Typ
           registrationFee: 1000,
         }, { isUpdate: false });
 
-        assert.equal(draftData.isPublished, false);
-        assert.equal(computeCompetitionStatus(draftData), 'DRAFT');
-        assert.equal(computeRegistrationStatus(draftData), 'CLOSED');
-
-        // Step 2: Published by Admin
-        const publishedComp = {
-          ...draftData,
-          isPublished: true,
-          publishedAt: new Date(),
-        };
+        assert.equal(publishedComp.isPublished, true);
         assert.equal(computeCompetitionStatus(publishedComp), 'PUBLISHED');
         assert.equal(computeRegistrationStatus(publishedComp), 'OPEN');
 
-        // Step 3: Admin Closes Registration
+        // Step 2: Admin Closes Registration
         const closedRegComp = {
           ...publishedComp,
           isRegistrationClosed: true,
@@ -270,7 +261,7 @@ describe('Competition Publication & Registration Flow Across All Competition Typ
         assert.equal(computeCompetitionStatus(closedRegComp), 'PUBLISHED');
         assert.equal(computeRegistrationStatus(closedRegComp), 'CLOSED');
 
-        // Step 4: Admin Reopens Registration
+        // Step 3: Admin Reopens Registration
         const reopenedComp = {
           ...closedRegComp,
           isRegistrationClosed: false,
@@ -279,7 +270,7 @@ describe('Competition Publication & Registration Flow Across All Competition Typ
         assert.equal(computeCompetitionStatus(reopenedComp), 'PUBLISHED');
         assert.equal(computeRegistrationStatus(reopenedComp), 'OPEN');
 
-        // Step 5: Completed Competition
+        // Step 4: Completed Competition
         const completedComp = {
           ...reopenedComp,
           isCompleted: true,

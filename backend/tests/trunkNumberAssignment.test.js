@@ -423,7 +423,7 @@ describe('Trunk Number Assignment – GOLD BODY ZONE', () => {
     assert.equal(mockRegistrations[1].trunkNumber, 1); // Paid gets 1
   });
 
-  it('11. Generates valid Excel (.xlsx) file with trunk numbers and candidate details', () => {
+  it('11. Generates valid Excel (.xlsx) file with trunk numbers and candidate details', async () => {
     const sampleRegistrations = [
       {
         id: 'reg-1',
@@ -444,7 +444,7 @@ describe('Trunk Number Assignment – GOLD BODY ZONE', () => {
       },
     ];
 
-    const buffer = generateTrunkNumbersExcel(mockCompetition1, sampleRegistrations);
+    const buffer = await generateTrunkNumbersExcel(mockCompetition1, sampleRegistrations);
     assert.ok(Buffer.isBuffer(buffer));
     assert.ok(buffer.length > 100);
   });

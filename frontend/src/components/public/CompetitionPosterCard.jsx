@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
-import { getCompetitionPoster } from '../../utils/competitionHelpers.js';
+import { getCompetitionPoster, getRegistrationStatus } from '../../utils/competitionHelpers.js';
 import { formatDate, formatFee } from '../../utils/formatters.js';
 
 export function CompetitionPosterCard({ competition }) {
   const posterSrc = getCompetitionPoster(competition);
+  const registrationClosed = getRegistrationStatus(competition) === 'Closed';
   const formattedDeadline = competition.registrationDeadline
     ? formatDate(competition.registrationDeadline)
     : 'Not Set';
@@ -31,6 +32,14 @@ export function CompetitionPosterCard({ competition }) {
           </span>
         </div>
       )}
+
+      <span className={`absolute top-4 right-4 z-10 rounded-full border px-3 py-1 text-[10px] font-bold uppercase backdrop-blur-md ${
+        registrationClosed
+          ? 'border-amber-400/40 bg-black/80 text-amber-200'
+          : 'border-emerald-400/40 bg-black/80 text-emerald-200'
+      }`}>
+        {registrationClosed ? 'Registration Closed' : 'Registration Open'}
+      </span>
 
       <div className="absolute inset-x-0 bottom-0 p-6 sm:p-7">
         <h3 className="font-display text-3xl leading-none font-extrabold tracking-wide text-white uppercase transition-colors duration-200 group-hover:text-[#F15A24] sm:text-4xl">

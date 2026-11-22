@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -69,6 +69,7 @@ export function ManualRegistrationModal({
   onSuccess,
 }) {
   const { accessToken } = useAuth();
+  const wasOpen = useRef(false);
 
   // Wizard Step: 'DETAILS' (Step 1) | 'PAYMENT' (Step 2)
   const [step, setStep] = useState('DETAILS');
@@ -111,9 +112,14 @@ export function ManualRegistrationModal({
     );
   }, [competitions, competitionId]);
 
-  // Reset state when modal opens
+  // Refreshing the competition list must not erase an in-progress registration.
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
+      wasOpen.current = false;
+      return;
+    }
+    if (!wasOpen.current) {
+      wasOpen.current = true;
       if (selectedCompetitionId) {
         setCompetitionId(selectedCompetitionId);
       } else if (competitions.length > 0 && !competitionId) {

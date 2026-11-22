@@ -1297,8 +1297,7 @@ export function AdminJudgeManagementPage() {
         <span className="font-bold text-white uppercase tracking-wider">
           Judging Requirements:
         </span>{' '}
-        Competitions must be <strong>Published</strong> and have{' '}
-        <strong>Closed Registrations</strong>. Click any competition card below to open its dedicated judging workspace.
+        Competitions appear here after registrations close and confirmed, paid contestants receive trunk numbers. Finish judging before marking a competition completed.
       </div>
 
       {/* Competitions Grid */}
@@ -1313,7 +1312,7 @@ export function AdminJudgeManagementPage() {
             No Eligible Competitions Ready for Judging
           </h3>
           <p className="mt-1 text-xs text-zinc-400 max-w-md mx-auto">
-            Competitions will appear here when they are published and their registration status is closed.
+            Close registrations, assign trunk numbers to confirmed, paid contestants, then return here. Completed competitions move to History.
           </p>
         </div>
       ) : (

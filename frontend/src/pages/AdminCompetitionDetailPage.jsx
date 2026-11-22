@@ -55,6 +55,7 @@ export function AdminCompetitionDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [judgingFinished, setJudgingFinished] = useState(false);
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
@@ -189,7 +190,7 @@ export function AdminCompetitionDetailPage() {
 
   const handleToggleRegistrationClosing = async () => {
     if (!competition) return;
-    const isCurrentlyClosed = competition.isRegistrationClosed;
+    const isCurrentlyClosed = isRegClosed;
 
     if (isCurrentlyClosed) {
       if (eventPassed) {
@@ -291,6 +292,8 @@ export function AdminCompetitionDetailPage() {
   const handleToggleCompletion = async () => {
     if (!competition) return;
     const nextCompleted = !competition.isCompleted;
+
+    if (nextCompleted && !window.confirm('Finish this competition? Do this after judging is complete. It will leave Judging and move to History.')) return;
 
     setActionLoading(true);
     setError('');
@@ -489,6 +492,31 @@ export function AdminCompetitionDetailPage() {
       (r) => r.trunkNumber !== null && r.trunkNumber !== undefined
     ).length;
   }, [registrations]);
+
+  const confirmedPaidCandidates = useMemo(() => registrations.filter(
+    (r) => r.registrationStatus === 'CONFIRMED' && r.paymentStatus === 'PAID'
+  ), [registrations]);
+  const numberedConfirmedCount = confirmedPaidCandidates.filter(
+    (r) => r.trunkNumber !== null && r.trunkNumber !== undefined
+  ).length;
+
+  useEffect(() => {
+    if (!competition?.isPublished || !isRegClosed || isCompleted ||
+        !confirmedPaidCandidates.length || numberedConfirmedCount !== confirmedPaidCandidates.length) {
+      setJudgingFinished(false);
+      return;
+    }
+    let active = true;
+    apiClient.fetchEligibleJudgingCompetitions(accessToken)
+      .then(({ competitions }) => {
+        if (active) setJudgingFinished(
+          competitions?.some((item) => item.id === competition.id && item.judgingStatus === 'Evaluation Done') || false
+        );
+      })
+      .catch(() => { if (active) setJudgingFinished(false); });
+    return () => { active = false; };
+  }, [accessToken, competition?.id, competition?.isPublished, isRegClosed, isCompleted,
+    confirmedPaidCandidates.length, numberedConfirmedCount]);
 
   const filteredTrunkRegistrations = useMemo(() => {
     let list = [...eligibleCandidates];
@@ -841,7 +869,7 @@ export function AdminCompetitionDetailPage() {
 
           {/* Close / Reopen Registrations */}
           {!competition.isCompleted &&
-            (competition.isRegistrationClosed ? (
+            (isRegClosed ? (
               <button
                 type="button"
                 onClick={handleToggleRegistrationClosing}
@@ -870,25 +898,16 @@ export function AdminCompetitionDetailPage() {
               </button>
             ))}
 
-          {/* Publish / Unpublish */}
-          {!competition.isCompleted && (
+          {/* Only older hidden competitions need a manual visibility action. */}
+          {!competition.isCompleted && !competition.isPublished && (
             <button
               type="button"
               onClick={handleTogglePublish}
               disabled={actionLoading}
               className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#222222] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/5 disabled:opacity-50"
             >
-              {competition.isPublished ? (
-                <>
-                  <EyeOff className="h-3.5 w-3.5 text-zinc-400" />
-                  Unpublish
-                </>
-              ) : (
-                <>
-                  <Eye className="h-3.5 w-3.5 text-emerald-400" />
-                  Publish
-                </>
-              )}
+              <Eye className="h-3.5 w-3.5 text-emerald-400" />
+              Show on Website
             </button>
           )}
 
@@ -896,7 +915,12 @@ export function AdminCompetitionDetailPage() {
           <button
             type="button"
             onClick={handleToggleCompletion}
-            disabled={actionLoading}
+            disabled={actionLoading || (!isCompleted && (!isRegClosed || (confirmedPaidCandidates.length > 0 && !judgingFinished)))}
+            title={!isCompleted && !isRegClosed
+              ? 'Close registrations before completing the competition.'
+              : !isCompleted && confirmedPaidCandidates.length > 0 && !judgingFinished
+                ? 'Finish judging before completing the competition.'
+                : 'Move this competition to History.'}
             className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
               competition.isCompleted
                 ? 'border-white/10 bg-white/5 text-[#A1A1AA] hover:bg-white/10 hover:text-white'
@@ -910,10 +934,11 @@ export function AdminCompetitionDetailPage() {
           </button>
 
           {/* Assign Trunk Numbers Button */}
-          <button
+          {canAssignTrunkNumbers && confirmedPaidCandidates.length > 0 && numberedConfirmedCount < confirmedPaidCandidates.length && (
+            <button
             type="button"
             onClick={handleAssignTrunkNumbers}
-            disabled={actionLoading || assigningTrunkNumbers || !canAssignTrunkNumbers}
+            disabled={actionLoading || assigningTrunkNumbers}
             title={
               isCompleted
                 ? 'Trunk numbers cannot be assigned for a completed competition.'
@@ -921,11 +946,7 @@ export function AdminCompetitionDetailPage() {
                   ? 'Trunk numbers can only be bulk assigned after registration has closed.'
                   : 'Bulk assign trunk numbers to all eligible confirmed & paid candidates.'
             }
-            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
-              canAssignTrunkNumbers
-                ? 'border-[#F15A24]/40 bg-[#F15A24]/15 text-[#F15A24] hover:bg-[#F15A24]/25'
-                : 'border-white/10 bg-white/5 text-zinc-500 cursor-not-allowed opacity-60'
-            }`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[#F15A24]/40 bg-[#F15A24]/15 px-3 py-2 text-xs font-bold text-[#F15A24] transition-colors hover:bg-[#F15A24]/25 disabled:opacity-50"
           >
             {assigningTrunkNumbers ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -933,9 +954,31 @@ export function AdminCompetitionDetailPage() {
               <Hash className="h-3.5 w-3.5" />
             )}
             <span>Assign Trunk Numbers</span>
-          </button>
+            </button>
+          )}
         </div>
       </div>
+
+      {!isCompleted && (
+        <div className="rounded-xl border border-white/10 bg-[#222222] px-4 py-3 text-xs text-zinc-300">
+          {!competition.isPublished
+            ? 'This older competition is hidden. Choose Show on Website to make it public.'
+            : !isRegClosed
+              ? 'Visible on the public website. Close registrations when entries are finished; the public page will show Registration Closed.'
+              : confirmedPaidCandidates.length === 0
+                ? 'Registration is closed and remains visible publicly. Confirm paid participants before assigning trunk numbers.'
+                : numberedConfirmedCount < confirmedPaidCandidates.length
+                  ? 'Registration is closed. Assign trunk numbers to all confirmed, paid participants, then open Judging.'
+                  : judgingFinished
+                    ? 'Judging is complete. You can now mark this competition completed and move it to History.'
+                    : 'Ready for Judging. Complete the judging work before marking this competition completed.'}
+          {competition.isPublished && isRegClosed && confirmedPaidCandidates.length > 0 && numberedConfirmedCount === confirmedPaidCandidates.length && (
+            <button type="button" onClick={() => navigate('/admin/judge')} className="ml-2 font-bold text-[#F15A24] hover:underline">
+              Open Judging →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Banner / Success / Error Alerts */}
       {error && (

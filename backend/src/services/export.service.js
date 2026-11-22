@@ -178,7 +178,7 @@ export const TRUNK_NUMBER_HEADERS = [
  * - Sorted by Trunk Number ascending (unassigned candidates at the end)
  * - Contains candidate details and assigned trunk numbers
  */
-export function generateTrunkNumbersExcel(competition, registrations = []) {
+export async function generateTrunkNumbersExcel(competition, registrations = []) {
   const rows = [TRUNK_NUMBER_HEADERS];
 
   const sorted = [...registrations].sort((a, b) => {
@@ -214,26 +214,11 @@ export function generateTrunkNumbersExcel(competition, registrations = []) {
     ]);
   });
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Trunk Numbers');
+  rows.forEach((row) => ws.addRow(row));
+  [14, 26, 20, 24, 18, 10, 8, 16, 18, 14, 24, 22, 18, 16]
+    .forEach((width, index) => { ws.getColumn(index + 1).width = width; });
 
-  ws['!cols'] = [
-    { wch: 14 }, // Trunk Number
-    { wch: 26 }, // Candidate Name
-    { wch: 20 }, // Registration ID
-    { wch: 24 }, // Category
-    { wch: 18 }, // Group
-    { wch: 10 }, // Gender
-    { wch: 8 },  // Age
-    { wch: 16 }, // Mobile Number
-    { wch: 18 }, // District
-    { wch: 14 }, // Representing
-    { wch: 24 }, // Gym Name
-    { wch: 22 }, // Registration Date
-    { wch: 18 }, // Registration Status
-    { wch: 16 }, // Payment Status
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, 'Trunk Numbers');
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

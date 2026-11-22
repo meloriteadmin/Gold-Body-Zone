@@ -97,7 +97,7 @@ export const apiClient = {
     pendingCompetitionsPromise = request('/public/competitions', { timeoutMs: 12000 })
       .then((data) => {
         cachedCompetitions = data;
-        cachedCompetitionsExpiry = Date.now() + 60000; // 60s in-memory cache
+        cachedCompetitionsExpiry = Date.now() + 5000;
         return data;
       })
       .finally(() => {
@@ -127,7 +127,7 @@ export const apiClient = {
     const promise = request(`/public/competitions/${encodeURIComponent(idOrSlug)}`, { timeoutMs: 12000 })
       .then((data) => {
         if (data?.competition) {
-          const entry = { data, expiry: Date.now() + 60000 };
+          const entry = { data, expiry: Date.now() + 5000 };
           competitionDetailCache.set(key, entry);
           if (data.competition.id) {
             competitionDetailCache.set(String(data.competition.id).toLowerCase(), entry);

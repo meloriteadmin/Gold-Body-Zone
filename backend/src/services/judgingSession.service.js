@@ -65,7 +65,7 @@ export function sortJudgingCategories(categories = []) {
 }
 
 /**
- * Lists published competitions where registration is closed and which are not completed or cancelled.
+ * Lists published competitions ready to judge: registration closed and numbered contestants present.
  */
 export async function listEligibleJudgingCompetitions() {
   const prisma = getPrismaClient();
@@ -85,7 +85,6 @@ export async function listEligibleJudgingCompetitions() {
         where: {
           registrationStatus: 'CONFIRMED',
           paymentStatus: 'PAID',
-          trunkNumber: { not: null },
         },
         select: {
           id: true,
@@ -106,7 +105,9 @@ export async function listEligibleJudgingCompetitions() {
     if (compStatus === 'COMPLETED' || comp.isCompleted) return false;
 
     const regStatus = computeRegistrationStatus(comp);
-    return regStatus === 'CLOSED';
+    return regStatus === 'CLOSED' &&
+      comp.registrations.length > 0 &&
+      comp.registrations.every((registration) => registration.trunkNumber != null);
   });
 
   const activeJudgesCount = prisma.judge.count
@@ -199,9 +200,8 @@ export async function startJudgingSession(competitionId, { durationHours = 24 } 
         where: {
           registrationStatus: 'CONFIRMED',
           paymentStatus: 'PAID',
-          trunkNumber: { not: null },
         },
-        select: { id: true },
+        select: { id: true, trunkNumber: true },
       },
     },
   });
@@ -224,6 +224,10 @@ export async function startJudgingSession(competitionId, { durationHours = 24 } 
 
   if (!competition.isPublished) {
     throw new HttpError(400, 'Competition must be published to start a judging session.');
+  }
+
+  if (!competition.registrations.length || competition.registrations.some((registration) => registration.trunkNumber == null)) {
+    throw new HttpError(400, 'Assign trunk numbers to all confirmed, paid contestants before starting judging.');
   }
 
   // Generate secure cryptographic token

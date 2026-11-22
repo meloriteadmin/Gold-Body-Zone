@@ -229,9 +229,9 @@ export function validateCompetitionPayload(body, { isUpdate = false } = {}) {
   if (maxParticipants !== undefined) data.maxParticipants = maxParticipants;
 
   if (!isUpdate) {
-    // New competitions must always be saved as Draft. Admin must explicitly publish them.
-    data.isPublished = false;
-    data.publishedAt = null;
+    // Creating a competition makes it visible on the public website immediately.
+    data.isPublished = true;
+    data.publishedAt = new Date();
     data.isCompleted = false;
     data.completedAt = null;
     data.isRegistrationClosed = false;

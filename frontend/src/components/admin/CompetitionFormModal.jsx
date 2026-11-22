@@ -35,7 +35,6 @@ export function CompetitionFormModal({
   const [genderEligibility, setGenderEligibility] = useState('ALL');
   const [ageEligibility, setAgeEligibility] = useState('');
   const [categories, setCategories] = useState([]);
-  const [isPublished, setIsPublished] = useState(false);
 
   const [posterFile, setPosterFile] = useState(null);
   const [posterPreviewUrl, setPosterPreviewUrl] = useState('');
@@ -64,7 +63,6 @@ export function CompetitionFormModal({
       setGenderEligibility(editingCompetition.genderEligibility || 'ALL');
       setAgeEligibility(editingCompetition.ageEligibility || '');
       setCategories(editingCompetition.categories || []);
-      setIsPublished(Boolean(editingCompetition.isPublished));
       setPosterFile(null);
       setPosterPreviewUrl(editingCompetition.posterUrl || '');
       setIsPosterRemoved(false);
@@ -86,7 +84,6 @@ export function CompetitionFormModal({
     setGenderEligibility(defaultConfig?.genderEligibility || 'ALL');
     setAgeEligibility(defaultConfig?.ageEligibility || '');
     setCategories(defaultConfig?.categories || []);
-    setIsPublished(false);
     setPosterFile(null);
     setPosterPreviewUrl('');
     setIsPosterRemoved(false);
@@ -206,7 +203,6 @@ export function CompetitionFormModal({
           competitionType === 'Masters'
             ? 'Above 40 years of age'
             : ageEligibility.trim() || null,
-        isPublished: editingCompetition ? isPublished : false,
         categories: categories.map((cat, index) => ({
           ...(cat.id ? { id: cat.id } : {}),
           categoryType: cat.categoryType,
@@ -649,38 +645,10 @@ export function CompetitionFormModal({
               )}
             </div>
 
-            {/* Publication Status */}
-            {editingCompetition ? (
-              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-[#222222] p-4">
-                <div>
-                  <p className="text-sm font-semibold text-white">
-                    Publish Competition
-                  </p>
-                  <p className="text-xs text-[#A1A1AA]">
-                    Published competitions are visible on the public website.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isPublished}
-                  onChange={(e) => setIsPublished(e.target.checked)}
-                  className="h-5 w-5 accent-[#F15A24]"
-                />
-              </label>
-            ) : (
-              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#222222]/60 p-4">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-300">
-                    Status: Draft
-                  </p>
-                  <p className="text-xs text-[#A1A1AA]">
-                    New competitions are always created as Draft. You can explicitly publish the competition from its details page when ready.
-                  </p>
-                </div>
-                <span className="rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-zinc-400 uppercase">
-                  Draft
-                </span>
-              </div>
+            {!editingCompetition && (
+              <p className="rounded-xl border border-white/10 bg-[#222222] p-4 text-xs text-zinc-300">
+                This competition will appear on the public website when you create it.
+              </p>
             )}
           </div>
 

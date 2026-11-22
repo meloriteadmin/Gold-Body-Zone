@@ -5,6 +5,7 @@ import {
   uploadImageToBucket,
 } from '../services/storage.service.js';
 import {
+  computeRegistrationStatus,
   isPastEvent,
   makeUniqueSlug,
   normalizeCategoryInput,
@@ -255,6 +256,15 @@ export async function setRegistrationClosingStatus(req, res, next) {
         );
       }
 
+      const judgingSession = await prisma.judgingSession.findFirst({
+        where: { competitionId: existing.id, status: { in: ['ACTIVE', 'COMPLETED'] } },
+      });
+      if (judgingSession) {
+        throw new HttpError(400, judgingSession.status === 'ACTIVE'
+          ? 'Revoke the active judging session before reopening registrations.'
+          : 'Registrations cannot be reopened after judging is complete.');
+      }
+
       if (isPastEvent(existing.eventDate)) {
         throw new HttpError(
           400,
@@ -350,8 +360,8 @@ export async function createCompetition(req, res, next) {
     const created = await prisma.competition.create({
       data: {
         ...data,
-        isPublished: false,
-        publishedAt: null,
+        isPublished: true,
+        publishedAt: data.publishedAt,
         slug: makeUniqueSlug(data.name),
         isDefault: false,
         categories:
@@ -613,6 +623,9 @@ async function syncCompetitionCategories(tx, competitionId, incomingCategories) 
 
 export async function updateCompetition(req, res, next) {
   try {
+    if (['isPublished', 'isRegistrationClosed', 'isCompleted'].some((field) => req.body[field] !== undefined)) {
+      throw new HttpError(400, 'Use the competition visibility, registration, or completion actions to change its status.');
+    }
     const prisma = getPrismaClient();
     const existing = await prisma.competition.findUnique({
       where: { id: req.params.id },
@@ -667,6 +680,24 @@ export async function toggleCompetitionCompletion(req, res, next) {
       req.body.isCompleted !== undefined
         ? Boolean(req.body.isCompleted)
         : !existing.isCompleted;
+
+    if (nextCompleted) {
+      if (computeRegistrationStatus(existing) !== 'CLOSED') {
+        throw new HttpError(400, 'Close registrations before completing the competition.');
+      }
+
+      const paidContestants = await prisma.registration.count({
+        where: { competitionId: existing.id, registrationStatus: 'CONFIRMED', paymentStatus: 'PAID' },
+      });
+      if (paidContestants > 0) {
+        const finishedJudging = await prisma.judgingSession.findFirst({
+          where: { competitionId: existing.id, status: 'COMPLETED' },
+        });
+        if (!finishedJudging) {
+          throw new HttpError(400, 'Finish judging before marking this competition completed.');
+        }
+      }
+    }
 
     const updated = await prisma.competition.update({
       where: { id: existing.id },

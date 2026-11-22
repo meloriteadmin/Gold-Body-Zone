@@ -101,8 +101,7 @@ describe('Judge Management & Initial Judging Workflow — GOLD BODY ZONE', () =>
             (r) =>
               r.competitionId === c.id &&
               r.registrationStatus === 'CONFIRMED' &&
-              r.paymentStatus === 'PAID' &&
-              r.trunkNumber !== null
+              r.paymentStatus === 'PAID'
           ),
           judgingSessions: mockSessions
             .filter((s) => s.competitionId === c.id)
@@ -514,6 +513,31 @@ describe('Judge Management & Initial Judging Workflow — GOLD BODY ZONE', () =>
     assert.equal(session.status, 'ACTIVE');
     assert.equal(session.competitionId, 'comp-101');
     assert.ok(new Date(session.expiresAt) > new Date());
+  });
+
+  it('does not show or start judging before trunk numbers are assigned', async () => {
+    mockCompetitions.push({
+      id: 'comp-awaiting-numbers',
+      name: 'Awaiting Trunk Numbers',
+      isPublished: true,
+      isCompleted: false,
+      isRegistrationClosed: true,
+      categories: [],
+    });
+    mockRegistrations.push({
+      id: 'reg-awaiting-number',
+      competitionId: 'comp-awaiting-numbers',
+      registrationStatus: 'CONFIRMED',
+      paymentStatus: 'PAID',
+      trunkNumber: null,
+    });
+
+    const listed = await listEligibleJudgingCompetitions();
+    assert.equal(listed.some((comp) => comp.id === 'comp-awaiting-numbers'), false);
+    await assert.rejects(
+      () => startJudgingSession('comp-awaiting-numbers'),
+      /Assign trunk numbers/
+    );
   });
 
   it('4. Temporary session link can be validated and revoked', async () => {

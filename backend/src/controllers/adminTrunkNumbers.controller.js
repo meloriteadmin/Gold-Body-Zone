@@ -141,7 +141,7 @@ export async function exportTrunkNumbersExcelHandler(req, res, next) {
       ],
     });
 
-    const excelBuffer = generateTrunkNumbersExcel(competition, registrations);
+    const excelBuffer = await generateTrunkNumbersExcel(competition, registrations);
 
     const safeSlug = (competition.slug || competition.name || 'competition')
       .replace(/[^a-zA-Z0-9_-]/g, '_');
