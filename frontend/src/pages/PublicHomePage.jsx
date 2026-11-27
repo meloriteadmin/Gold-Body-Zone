@@ -9,7 +9,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import dewaliShreePoster from '../assets/images/Dewali Shree 2026 Bodybuilding Poster (1).png';
+import dewaliShreePoster from '../assets/images/Dewali Shree 2026 Bodybuilding Poster (1).jpeg';
 import { CompetitionPosterCard } from '../components/public/CompetitionPosterCard.jsx';
 import { apiClient } from '../lib/apiClient.js';
 import './PublicHomeHero.css';

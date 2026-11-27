@@ -97,10 +97,10 @@ export async function listRegistrations(req, res, next) {
       Math.max(1, Number.parseInt(req.query.limit || '15', 10) || 15)
     );
 
-    const where = {};
+    const baseWhere = {};
 
     if (search) {
-      where.OR = [
+      baseWhere.OR = [
         { participantName: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { mobileNumber: { contains: search, mode: 'insensitive' } },
@@ -109,16 +109,24 @@ export async function listRegistrations(req, res, next) {
     }
 
     if (competitionId) {
-      where.competitionId = competitionId;
+      baseWhere.competitionId = competitionId;
     }
 
     if (categoryId) {
-      where.categoryId = categoryId;
+      baseWhere.categoryId = categoryId;
     }
 
     if (groupId) {
-      where.groupId = groupId;
+      baseWhere.groupId = groupId;
     }
+
+    if (source === 'ONLINE') {
+      baseWhere.isManual = false;
+    } else if (source === 'MANUAL') {
+      baseWhere.isManual = true;
+    }
+
+    const where = { ...baseWhere };
 
     if (
       registrationStatus &&
@@ -131,22 +139,32 @@ export async function listRegistrations(req, res, next) {
       where.paymentStatus = paymentStatus;
     }
 
-    if (source === 'ONLINE') {
-      where.isManual = false;
-    } else if (source === 'MANUAL') {
-      where.isManual = true;
-    }
-
-    const [total, registrations] = await Promise.all([
-      prisma.registration.count({ where }),
-      prisma.registration.findMany({
-        where,
-        include: REGISTRATION_INCLUDE,
-        orderBy: { createdAt: sortOrder },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+    const [total, registrations, summaryTotal, summaryPaid, summaryUnpaid] =
+      await Promise.all([
+        prisma.registration.count({ where }),
+        prisma.registration.findMany({
+          where,
+          include: REGISTRATION_INCLUDE,
+          orderBy: { createdAt: sortOrder },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        prisma.registration.count({ where: baseWhere }),
+        prisma.registration.count({
+          where: {
+            ...baseWhere,
+            paymentStatus: 'PAID',
+            registrationStatus: { not: 'CANCELLED' },
+          },
+        }),
+        prisma.registration.count({
+          where: {
+            ...baseWhere,
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+            registrationStatus: { not: 'CANCELLED' },
+          },
+        }),
+      ]);
 
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -157,6 +175,11 @@ export async function listRegistrations(req, res, next) {
         limit,
         total,
         totalPages,
+      },
+      counts: {
+        total: summaryTotal,
+        paid: summaryPaid,
+        unpaid: summaryUnpaid,
       },
     });
   } catch (err) {

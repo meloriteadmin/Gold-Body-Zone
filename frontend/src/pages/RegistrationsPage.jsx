@@ -71,6 +71,11 @@ export function RegistrationsPage() {
 
   // Registrations state
   const [registrations, setRegistrations] = useState([]);
+  const [counts, setCounts] = useState({
+    total: 0,
+    paid: 0,
+    unpaid: 0,
+  });
   const [pagination, setPagination] = useState({
     page: 1,
     limit: PAGE_SIZE,
@@ -128,16 +133,29 @@ export function RegistrationsPage() {
   }, [paramCompetitionId]);
 
   // Load competitions list
-  const loadCompetitions = useCallback(async () => {
+  const loadCompetitions = useCallback(async (options = {}) => {
     if (!accessToken) return;
-    setCompetitionsLoading(true);
+    const isSilent = Boolean(options && typeof options === 'object' && options.silent);
+    if (!isSilent) {
+      setCompetitionsLoading(true);
+    }
     try {
       const data = await apiClient.fetchAdminCompetitions(accessToken);
-      setCompetitions(Array.isArray(data?.competitions) ? data.competitions : []);
+      const newComps = Array.isArray(data?.competitions) ? data.competitions : [];
+      setCompetitions((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(newComps)) {
+          return prev;
+        }
+        return newComps;
+      });
     } catch (err) {
-      setError(err?.message || 'Failed to load competitions.');
+      if (!isSilent) {
+        setError(err?.message || 'Failed to load competitions.');
+      }
     } finally {
-      setCompetitionsLoading(false);
+      if (!isSilent) {
+        setCompetitionsLoading(false);
+      }
     }
   }, [accessToken]);
 
@@ -160,6 +178,24 @@ export function RegistrationsPage() {
     return competitions.find((c) => c.id === selectedCompetitionId) || null;
   }, [competitions, selectedCompetitionId]);
 
+  const displayCounts = useMemo(() => {
+    if (counts && typeof counts.total === 'number') {
+      return counts;
+    }
+    if (activeCompetition?.registrationStats) {
+      return {
+        total: activeCompetition.registrationStats.total ?? 0,
+        paid: activeCompetition.registrationStats.paid ?? 0,
+        unpaid: activeCompetition.registrationStats.unpaid ?? 0,
+      };
+    }
+    return {
+      total: 0,
+      paid: 0,
+      unpaid: 0,
+    };
+  }, [counts, activeCompetition]);
+
   // Available categories for selected competition
   const availableCategories = useMemo(() => {
     return activeCompetition?.categories || [];
@@ -175,10 +211,13 @@ export function RegistrationsPage() {
   }, [availableCategories, categoryId]);
 
   // Load registrations when a competition is selected
-  const loadRegistrations = useCallback(async () => {
+  const loadRegistrations = useCallback(async (options = {}) => {
     if (!accessToken || !selectedCompetitionId) return;
-    setLoading(true);
-    setError('');
+    const isSilent = Boolean(options && typeof options === 'object' && options.silent);
+    if (!isSilent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const data = await apiClient.fetchAdminRegistrations(accessToken, {
         search: debouncedSearch,
@@ -191,23 +230,52 @@ export function RegistrationsPage() {
         page,
         limit: PAGE_SIZE,
       });
-      setRegistrations(
-        Array.isArray(data?.registrations) ? data.registrations : []
-      );
-      setPagination(
-        data?.pagination || {
-          page,
-          limit: PAGE_SIZE,
-          total: 0,
-          totalPages: 1,
+      const newRegistrations = Array.isArray(data?.registrations) ? data.registrations : [];
+      setRegistrations((prev) => {
+        if (JSON.stringify(prev) === JSON.stringify(newRegistrations)) {
+          return prev;
         }
-      );
+        return newRegistrations;
+      });
+      const newPagination = data?.pagination || {
+        page,
+        limit: PAGE_SIZE,
+        total: 0,
+        totalPages: 1,
+      };
+      setPagination((prev) => {
+        if (
+          prev.page === newPagination.page &&
+          prev.limit === newPagination.limit &&
+          prev.total === newPagination.total &&
+          prev.totalPages === newPagination.totalPages
+        ) {
+          return prev;
+        }
+        return newPagination;
+      });
+      if (data?.counts) {
+        setCounts((prev) => {
+          if (
+            prev.total === data.counts.total &&
+            prev.paid === data.counts.paid &&
+            prev.unpaid === data.counts.unpaid
+          ) {
+            return prev;
+          }
+          return data.counts;
+        });
+      }
     } catch (err) {
-      setError(
-        err?.message || 'Failed to load registrations. Please try again.'
-      );
+      if (!isSilent) {
+        setError(
+          err?.message || 'Failed to load registrations. Please try again.'
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }, [
     accessToken,
@@ -258,7 +326,10 @@ export function RegistrationsPage() {
   useEffect(() => {
     if (!selectedCompetitionId) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden) { loadRegistrations(); loadCompetitions(); }
+      if (!document.hidden) {
+        loadRegistrations({ silent: true });
+        loadCompetitions({ silent: true });
+      }
     }, 15_000);
     return () => window.clearInterval(timer);
   }, [selectedCompetitionId, loadRegistrations, loadCompetitions]);
@@ -272,6 +343,12 @@ export function RegistrationsPage() {
     setRegistrationStatus('');
     setSearchInput('');
     setPage(1);
+    setRegistrations([]);
+    setCounts({
+      total: comp?.registrationStats?.total ?? 0,
+      paid: comp?.registrationStats?.paid ?? 0,
+      unpaid: comp?.registrationStats?.unpaid ?? 0,
+    });
   };
 
   const handleBackToOverview = () => {
@@ -284,6 +361,7 @@ export function RegistrationsPage() {
     setSearchInput('');
     setPage(1);
     setRegistrations([]);
+    setCounts({ total: 0, paid: 0, unpaid: 0 });
     loadCompetitions();
   };
 
@@ -340,7 +418,7 @@ export function RegistrationsPage() {
             </button>
             <button
               type="button"
-              onClick={loadCompetitions}
+              onClick={() => loadCompetitions()}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-[#171717] px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:border-[#F15A24]/40"
             >
               <RefreshCw className="h-3.5 w-3.5 text-[#F15A24]" />
@@ -545,11 +623,11 @@ export function RegistrationsPage() {
           onUpdateStatus={async (id, registrationStatus) => {
             const result = await apiClient.updateRegistrationStatus(accessToken, id, registrationStatus);
             setSelectedRegistration(result.registration);
-            loadRegistrations();
+            loadRegistrations({ silent: true });
           }}
           onStatusUpdated={() => {
-            loadRegistrations();
-            loadCompetitions();
+            loadRegistrations({ silent: true });
+            loadCompetitions({ silent: true });
           }}
         />
       )}
@@ -635,7 +713,7 @@ export function RegistrationsPage() {
 
           <button
             type="button"
-            onClick={loadRegistrations}
+            onClick={() => loadRegistrations()}
             disabled={loading}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#171717] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:border-[#F15A24]/40 disabled:opacity-50"
           >
@@ -697,47 +775,29 @@ export function RegistrationsPage() {
         </div>
 
           {/* Quick Stats Pills */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-white/[0.08] bg-[#141414] px-4 py-2.5 text-center">
-              <p className="text-[10px] font-semibold text-zinc-400 uppercase">
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+            <div className="rounded-xl border border-white/[0.08] bg-[#141414] px-4 py-2.5 text-center min-w-[90px] sm:min-w-[110px]">
+              <p className="text-[10px] font-semibold tracking-wider text-zinc-400 uppercase">
                 Total
               </p>
               <p className="font-display text-lg font-bold text-white">
-                {pagination.total}
+                {displayCounts.total}
               </p>
             </div>
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-2.5 text-center">
-              <p className="text-[10px] font-semibold text-blue-300 uppercase">
-                Confirmed
-              </p>
-              <p className="font-display text-lg font-bold text-blue-400">
-                {
-                  registrations.filter(
-                    (r) => r.registrationStatus === 'CONFIRMED'
-                  ).length
-                }
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-center">
-              <p className="text-[10px] font-semibold text-emerald-300 uppercase">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-center min-w-[90px] sm:min-w-[110px]">
+              <p className="text-[10px] font-semibold tracking-wider text-emerald-300 uppercase">
                 Paid
               </p>
               <p className="font-display text-lg font-bold text-emerald-400">
-                {
-                  registrations.filter((r) => r.paymentStatus === 'PAID')
-                    .length
-                }
+                {displayCounts.paid}
               </p>
             </div>
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-center">
-              <p className="text-[10px] font-semibold text-amber-300 uppercase">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-center min-w-[90px] sm:min-w-[110px]">
+              <p className="text-[10px] font-semibold tracking-wider text-amber-300 uppercase">
                 Unpaid / Pending
               </p>
               <p className="font-display text-lg font-bold text-amber-400">
-                {
-                  registrations.filter((r) => r.paymentStatus !== 'PAID')
-                    .length
-                }
+                {displayCounts.unpaid}
               </p>
             </div>
           </div>
@@ -895,7 +955,7 @@ export function RegistrationsPage() {
 
       {/* Participants Table */}
       <section className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#171717] shadow-xl">
-        {loading ? (
+        {loading && registrations.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-7 w-7 animate-spin text-[#F15A24]" />
           </div>

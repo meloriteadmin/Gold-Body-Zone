@@ -65,7 +65,9 @@ export function serializeCompetition(competition, options = {}) {
   if (!competition) return null;
 
   const paidRegistrations = (competition.registrations || []).filter(
-    (r) => r.paymentStatus === 'PAID' || r.payment?.status === 'PAID'
+    (r) =>
+      (r.paymentStatus === 'PAID' || r.payment?.status === 'PAID') &&
+      r.registrationStatus !== 'CANCELLED'
   );
   const totalRevenue = paidRegistrations.reduce((sum, r) => {
     const amt = Number(r.payment?.amount ?? competition.registrationFee ?? 0);
@@ -143,7 +145,9 @@ export function serializeCompetition(competition, options = {}) {
       ).length,
       paid: paidRegistrations.length,
       unpaid: (competition.registrations || []).filter(
-        (r) => r.paymentStatus !== 'PAID' && r.payment?.status !== 'PAID'
+        (r) =>
+          (r.paymentStatus === 'PENDING' || r.paymentStatus === 'FAILED' || r.payment?.status === 'PENDING') &&
+          r.registrationStatus !== 'CANCELLED'
       ).length,
       totalRevenue: Number(totalRevenue.toFixed(2)),
     },
