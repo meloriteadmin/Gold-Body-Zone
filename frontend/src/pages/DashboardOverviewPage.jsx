@@ -34,9 +34,8 @@ export function DashboardOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const loadDashboard = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(''); }
     try {
       const data = await apiClient.fetchAdminDashboard(accessToken);
       setStats(
@@ -48,14 +47,20 @@ export function DashboardOverviewPage() {
       );
       setCompetitions(data.competitions || []);
     } catch (err) {
-      setError(err.message || 'Failed to load dashboard overview.');
+      if (!silent) setError(err.message || 'Failed to load dashboard overview.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [accessToken]);
 
   useEffect(() => {
     loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const refresh = () => loadDashboard({ silent: true });
+    window.addEventListener('admin-data-changed', refresh);
+    return () => window.removeEventListener('admin-data-changed', refresh);
   }, [loadDashboard]);
 
   useEffect(() => {

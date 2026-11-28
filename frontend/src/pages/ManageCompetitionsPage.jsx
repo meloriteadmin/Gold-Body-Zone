@@ -24,23 +24,28 @@ export function ManageCompetitionsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCompetition, setEditingCompetition] = useState(null);
 
-  const loadCompetitions = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const loadCompetitions = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) { setLoading(true); setError(''); }
     try {
       const data = await apiClient.fetchAdminCompetitions(accessToken, {
         history: false,
       });
       setCompetitions(data.competitions || []);
     } catch (err) {
-      setError(err.message || 'Failed to load competitions.');
+      if (!silent) setError(err.message || 'Failed to load competitions.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [accessToken]);
 
   useEffect(() => {
     loadCompetitions();
+  }, [loadCompetitions]);
+
+  useEffect(() => {
+    const refresh = () => loadCompetitions({ silent: true });
+    window.addEventListener('admin-data-changed', refresh);
+    return () => window.removeEventListener('admin-data-changed', refresh);
   }, [loadCompetitions]);
 
   useEffect(() => {

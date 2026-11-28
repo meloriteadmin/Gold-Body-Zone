@@ -84,6 +84,14 @@ export async function createJudge(payload) {
   const prisma = getPrismaClient();
 
   const competitionId = payload?.competitionId || null;
+  const competitionIds = Array.isArray(payload?.competitionIds)
+    ? [...new Set(payload.competitionIds.filter((id) => typeof id === 'string' && id))]
+    : competitionId ? [competitionId] : [];
+  if (Array.isArray(payload?.competitionIds)) {
+    if (!competitionIds.length) throw new HttpError(400, 'Select at least one live competition.');
+    const live = await prisma.competition.findMany({ where: { id: { in: competitionIds }, isPublished: true, isCompleted: false }, select: { id: true } });
+    if (live.length !== competitionIds.length) throw new HttpError(400, 'One or more selected competitions are not live.');
+  }
 
   const judge = await prisma.judge.create({
     data: {
@@ -93,14 +101,10 @@ export async function createJudge(payload) {
       city: validated.city || null,
       designation: validated.designation || 'Judge',
       isActive: validated.isActive !== undefined ? validated.isActive : true,
-      competitionId,
-      assignments: competitionId
+      competitionId: competitionIds[0] || null,
+      assignments: competitionIds.length
         ? {
-            create: [
-              {
-                competitionId,
-              },
-            ],
+            create: competitionIds.map((id) => ({ competitionId: id })),
           }
         : undefined,
     },
@@ -210,6 +214,7 @@ export async function deleteJudge(id) {
           selections: true,
           rankings: true,
           submissions: true,
+          liveSubmissions: true,
         },
       },
     },
@@ -222,7 +227,8 @@ export async function deleteJudge(id) {
   const hasHistory =
     (existing._count?.selections || 0) > 0 ||
     (existing._count?.rankings || 0) > 0 ||
-    (existing._count?.submissions || 0) > 0;
+    (existing._count?.submissions || 0) > 0 ||
+    (existing._count?.liveSubmissions || 0) > 0;
 
   // If judge has historical judging records, deactivate rather than hard delete to preserve audit history and historical results
   if (hasHistory) {

@@ -50,6 +50,8 @@ describe('competition lifecycle', () => {
         async update({ data }) { return { ...competition, ...data, categories: [], registrations: [] }; },
       },
       registration: { async count() { return 2; } },
+      liveCompetitionState: { async findUnique() { return null; } },
+      liveHeat: { async findFirst() { return null; } },
       judgingSession: { async findFirst() { return judgingFinished ? { status: 'COMPLETED' } : null; } },
     };
 

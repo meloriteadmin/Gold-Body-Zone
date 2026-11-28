@@ -124,6 +124,8 @@ model Competition {
   judgingSessions      JudgingSession[]
   judges               Judge[]
   assignedJudges       CompetitionJudge[]
+  liveHeats            LiveHeat[]
+  liveState            LiveCompetitionState?
 
   @@index([isPublished, eventDate])
   @@map("competitions")
@@ -189,6 +191,7 @@ model Registration {
   paymentMethod      String?             @map("payment_method")
   acknowledgementEmailSentAt DateTime?   @map("acknowledgement_email_sent_at")
   confirmationEmailSentAt    DateTime?   @map("confirmation_email_sent_at")
+  verifiedAt         DateTime?           @map("verified_at")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   competition        Competition         @relation(fields: [competitionId], references: [id], onDelete: Restrict)
@@ -280,6 +283,7 @@ model Judge {
   selections     JudgeSemifinalistSelection[]
   rankings       JudgeRanking[]
   submissions    JudgeCategorySubmission[]
+  liveSubmissions LiveHeatSubmission[]
 
   @@index([competitionId])
   @@map("judges")
@@ -289,6 +293,7 @@ model CompetitionJudge {
   id            String      @id @default(uuid())
   competitionId String      @map("competition_id")
   judgeId       String      @map("judge_id")
+  accessToken   String?     @unique @map("access_token")
   createdAt     DateTime    @default(now()) @map("created_at")
 
   competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
@@ -377,4 +382,63 @@ model JudgeCategorySubmission {
   @@unique([sessionId, judgeId, categoryId, groupKey])
   @@index([sessionId, judgeId, categoryId])
   @@map("judge_category_submissions")
+}
+
+// ---------------------------------------------------------------------------
+// Live round-based scoring (Form 1 voting, Form 2 ranking, Form 3 titles)
+// ---------------------------------------------------------------------------
+
+model LiveHeat {
+  id             String      @id @default(uuid())
+  competitionId  String      @map("competition_id")
+  round          Int
+  categoryId     String?     @map("category_id")
+  groupId        String?     @map("group_id")
+  parentHeatId   String?     @map("parent_heat_id")
+  isTiebreak     Boolean     @default(false) @map("is_tiebreak")
+  status         String      @default("OPEN")
+  label          String?
+  selectionLimit Int?        @map("selection_limit")
+  participantIds Json        @default("[]") @map("participant_ids")
+  titles         Json        @default("[]")
+  openedAt       DateTime    @default(now()) @map("opened_at")
+  closedAt       DateTime?   @map("closed_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  competition    Competition          @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  submissions    LiveHeatSubmission[]
+
+  @@index([competitionId, round])
+  @@index([competitionId, status])
+  @@map("live_heats")
+}
+
+model LiveHeatSubmission {
+  id          String   @id @default(uuid())
+  heatId      String   @map("heat_id")
+  judgeId     String   @map("judge_id")
+  payload     Json     @default("{}")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  heat        LiveHeat @relation(fields: [heatId], references: [id], onDelete: Cascade)
+  judge       Judge    @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+
+  @@unique([heatId, judgeId])
+  @@index([heatId])
+  @@map("live_heat_submissions")
+}
+
+model LiveCompetitionState {
+  id               String      @id @default(uuid())
+  competitionId    String      @unique @map("competition_id")
+  round1Qualifiers Json        @default("{}") @map("round1_qualifiers")
+  round1Advancements Json      @default("{}") @map("round1_advancements")
+  titleAwards      Json        @default("[]") @map("title_awards")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  competition      Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@map("live_competition_states")
 }

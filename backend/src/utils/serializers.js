@@ -257,6 +257,9 @@ export function serializeRegistration(registration) {
       registration.trunkNumber !== null && registration.trunkNumber !== undefined
         ? Number(registration.trunkNumber)
         : null,
+    verifiedAt: registration.verifiedAt
+      ? new Date(registration.verifiedAt).toISOString()
+      : null,
     isManual: Boolean(
       registration.isManual ||
         registration.payment?.verificationSource === 'ADMIN_MANUAL'
@@ -367,6 +370,9 @@ export function serializePublicRegistration(registration) {
       registration.trunkNumber !== null && registration.trunkNumber !== undefined
         ? Number(registration.trunkNumber)
         : null,
+    verifiedAt: registration.verifiedAt
+      ? new Date(registration.verifiedAt).toISOString()
+      : null,
     isManual: Boolean(
       registration.isManual ||
         registration.payment?.verificationSource === 'ADMIN_MANUAL'

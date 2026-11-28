@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { getPrismaClient } from '../config/prisma.js';
+import { categoryMatchesMeasurements } from '../services/categoryRules.js';
 import {
   buildCashfreeOrderId,
   createCashfreeOrder,
@@ -433,6 +434,9 @@ export async function createPublicRegistration(req, res, next) {
         400,
         'Selected category does not belong to this competition.'
       );
+    }
+    if (!categoryMatchesMeasurements(category, input.weightKg, input.heightCm)) {
+      throw new HttpError(400, `Measurements do not fit ${category.name}. Select the matching category.`);
     }
 
     let resolvedGroup = null;

@@ -9,12 +9,13 @@ process.env.CHECKOUT_TOKEN_SECRET = process.env.CHECKOUT_TOKEN_SECRET || 'test-o
 const originalFetch = globalThis.fetch;
 
 before(() => {
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
+    const requestBody = options.body ? JSON.parse(options.body) : {};
     return {
       ok: true,
       status: 200,
       json: async () => ({
-        order_id: 'CF-TEST-123',
+        order_id: requestBody.order_id || 'CF-TEST-123',
         order_status: 'ACTIVE',
         payment_session_id: 'session_mock_123',
       }),
@@ -28,6 +29,7 @@ after(() => {
 
 let capturedFindManyWhere = null;
 let capturedFindUniqueWhere = null;
+let newlyCreatedRegistration = null;
 
 globalThis.__prisma = {
   registration: {
@@ -46,6 +48,9 @@ globalThis.__prisma = {
     },
     async findUnique({ where }) {
       capturedFindUniqueWhere = where;
+      if (where?.id && newlyCreatedRegistration?.id === where.id) {
+        return newlyCreatedRegistration;
+      }
       if (
         where?.competitionId_email?.competitionId === 'comp-1' &&
         where?.competitionId_email?.email === 'athlete.a@example.com'
@@ -69,6 +74,9 @@ globalThis.__prisma = {
     async upsert() {
       return {};
     },
+  },
+  async $queryRaw() {
+    return [];
   },
   $transaction: async (arg) => {
     if (typeof arg === 'function') {
@@ -127,6 +135,7 @@ describe('Public Registration Uniqueness and Duplicate Protection', () => {
   beforeEach(() => {
     capturedFindManyWhere = null;
     capturedFindUniqueWhere = null;
+    newlyCreatedRegistration = null;
   });
 
   it('createPublicRegistration rejects duplicate paid registration with 409', async () => {
@@ -173,20 +182,23 @@ describe('Public Registration Uniqueness and Duplicate Protection', () => {
     const res = createMockRes();
     let forwardedError = null;
 
-    globalThis.__prisma.registration.create = async ({ data }) => ({
-      id: 'reg-rahul',
-      registrationCode: 'REG-202611-RAHU01',
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      competition: {
-        id: data.competitionId,
-        name: 'State Bodybuilding Championship',
-        slug: 'state-bodybuilding',
-        registrationFee: 1000,
-      },
-      payment: null,
-    });
+    globalThis.__prisma.registration.create = async ({ data }) => {
+      newlyCreatedRegistration = {
+        id: 'reg-rahul',
+        registrationCode: 'REG-202611-RAHU01',
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        competition: {
+          id: data.competitionId,
+          name: 'State Bodybuilding Championship',
+          slug: 'state-bodybuilding',
+          registrationFee: 1000,
+        },
+        payment: null,
+      };
+      return newlyCreatedRegistration;
+    };
 
     await createPublicRegistration(
       {
@@ -219,20 +231,23 @@ describe('Public Registration Uniqueness and Duplicate Protection', () => {
     const res = createMockRes();
     let forwardedError = null;
 
-    globalThis.__prisma.registration.create = async ({ data }) => ({
-      id: 'reg-athlete-comp2',
-      registrationCode: 'REG-202611-CMP201',
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      competition: {
-        id: data.competitionId,
-        name: 'District Championship',
-        slug: 'district-championship',
-        registrationFee: 800,
-      },
-      payment: null,
-    });
+    globalThis.__prisma.registration.create = async ({ data }) => {
+      newlyCreatedRegistration = {
+        id: 'reg-athlete-comp2',
+        registrationCode: 'REG-202611-CMP201',
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        competition: {
+          id: data.competitionId,
+          name: 'District Championship',
+          slug: 'district-championship',
+          registrationFee: 800,
+        },
+        payment: null,
+      };
+      return newlyCreatedRegistration;
+    };
 
     await createPublicRegistration(
       {

@@ -20,25 +20,37 @@ export function HistoryPage() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [uploadingId, setUploadingId] = useState('');
+  const [success, setSuccess] = useState('');
+  useEffect(() => {
+    if (!success) return undefined;
+    const timer = window.setTimeout(() => setSuccess(''), 3500);
+    return () => window.clearTimeout(timer);
+  }, [success]);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async ({ silent = false } = {}) => {
     if (!accessToken) return;
-    setLoading(true);
-    setError('');
+    if (!silent) { setLoading(true); setError(''); }
     try {
       const res = await apiClient.fetchAdminCompetitions(accessToken, {
         history: true,
       });
       setCompetitions(res.competitions || []);
     } catch (err) {
-      setError(err.message || 'Failed to load completed competitions.');
+      if (!silent) setError(err.message || 'Failed to load completed competitions.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [accessToken]);
 
   useEffect(() => {
     loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
+    const refresh = () => loadHistory({ silent: true });
+    window.addEventListener('admin-data-changed', refresh);
+    return () => window.removeEventListener('admin-data-changed', refresh);
   }, [loadHistory]);
 
   const filteredCompetitions = useMemo(() => {
@@ -90,6 +102,36 @@ export function HistoryPage() {
     setStartDate('');
     setEndDate('');
   };
+  const restoreCompetition = async (competition) => {
+    if (!window.confirm(`Bring "${competition.name}" back to active competitions?`)) return;
+    try {
+      await apiClient.toggleCompetitionCompletion(accessToken, competition.id, false);
+      await loadHistory();
+    } catch (err) {
+      setError(err.message || 'Could not restore competition.');
+    }
+  };
+  const uploadHistoryPhotos = async (competition, files) => {
+    const images = Array.from(files || []);
+    if (!images.length) return;
+    if (images.some((file) => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+      setError('Use JPEG, PNG or WebP images under 5 MB each.');
+      return;
+    }
+    setUploadingId(competition.id);
+    setError('');
+    try {
+      for (let offset = 0; offset < images.length; offset += 20) {
+        await apiClient.uploadCompetitionPhotos(accessToken, competition.id, images.slice(offset, offset + 20), '');
+      }
+      setSuccess(`${images.length} photo(s) added to ${competition.name}.`);
+      await loadHistory();
+    } catch (err) {
+      setError(err.message || 'Could not upload photos.');
+    } finally {
+      setUploadingId('');
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -121,6 +163,7 @@ export function HistoryPage() {
           <span>{error}</span>
         </div>
       )}
+      {success && <div role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">{success}</div>}
 
       {/* Filter Toolbar */}
       <div className="space-y-3 rounded-2xl border border-white/[0.08] bg-[#1a1a1a] p-4">
@@ -204,7 +247,16 @@ export function HistoryPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filteredCompetitions.map((comp) => (
-            <CompetitionCard key={comp.id} competition={comp} />
+            <div key={comp.id} className="space-y-2">
+              <CompetitionCard competition={comp} />
+              <button type="button" onClick={() => restoreCompetition(comp)} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-white hover:border-[#F15A24]">
+                <RotateCcw className="h-4 w-4" /> Restore to active competitions
+              </button>
+              <label className="ml-2 inline-flex cursor-pointer items-center rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-white hover:border-[#F15A24]">
+                {uploadingId === comp.id ? 'Uploading…' : 'Add event photos'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" disabled={Boolean(uploadingId)} onChange={(event) => { uploadHistoryPhotos(comp, event.target.files); event.target.value = ''; }} />
+              </label>
+            </div>
           ))}
         </div>
       )}

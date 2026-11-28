@@ -96,12 +96,12 @@ export class InMemoryRateLimiter {
 
 /**
  * General Admin API Rate Limiter:
- * Allows 300 requests per 15-minute window per authenticated admin/IP.
+ * Allows 1000 requests per 15-minute window per authenticated admin/IP.
  * Suitable for standard admin portal browsing and dashboard queries.
  */
 export const adminGeneralLimiter = new InMemoryRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1000,
   message:
     'Too many admin API requests from this session. Please slow down and try again later.',
 }).middleware();
