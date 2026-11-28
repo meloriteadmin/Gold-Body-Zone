@@ -1,5 +1,14 @@
 import { env } from '../config/env.js';
 
+const adminChangesChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('gold-body-zone-admin-changes')
+  : null;
+if (adminChangesChannel) {
+  adminChangesChannel.onmessage = (event) => {
+    window.dispatchEvent(new CustomEvent('admin-data-changed', { detail: event.data }));
+  };
+}
+
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -64,6 +73,11 @@ async function request(
       response.status,
       data?.message || `Request failed with status ${response.status}`
     );
+  }
+
+  if (method !== 'GET' && path.startsWith('/admin/')) {
+    window.dispatchEvent(new CustomEvent('admin-data-changed', { detail: { path } }));
+    adminChangesChannel?.postMessage({ path });
   }
 
   return data;
@@ -634,5 +648,66 @@ export const apiClient = {
       method: 'POST',
       body: { judgeId, categoryId, groupId, winnerTitles },
       headers: judgeId ? { 'x-judge-id': judgeId } : {},
+    }),
+
+  // -------------------------------------------------------------
+  // LIVE ROUND SCORING (admin)
+  // -------------------------------------------------------------
+  fetchLiveCompetitions: () => request('/admin/live/competitions'),
+  fetchLiveDashboard: (competitionId) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}`),
+  openLiveHeat: (competitionId, payload) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/heats`, {
+      method: 'POST',
+      body: payload,
+    }),
+  closeLiveHeat: (heatId) =>
+    request(`/admin/live/heats/${encodeURIComponent(heatId)}/close`, { method: 'POST' }),
+  cancelLiveHeat: (heatId) =>
+    request(`/admin/live/heats/${encodeURIComponent(heatId)}/cancel`, { method: 'POST' }),
+  unlockLiveJudgeSheet: (heatId, judgeId) =>
+    request(
+      `/admin/live/heats/${encodeURIComponent(heatId)}/judges/${encodeURIComponent(judgeId)}/unlock`,
+      { method: 'POST' }
+    ),
+  setLiveQualifiers: (competitionId, payload) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/qualifiers`, {
+      method: 'PUT',
+      body: payload,
+    }),
+  setLiveTitleAwards: (competitionId, awards) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/titles`, {
+      method: 'PUT',
+      body: { awards },
+    }),
+  resetLiveScoring: (competitionId) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/reset`, { method: 'POST' }),
+  regenerateLiveJudgeLink: (competitionId, judgeId) =>
+    request(
+      `/admin/live/competitions/${encodeURIComponent(competitionId)}/judges/${encodeURIComponent(judgeId)}/regenerate-link`,
+      { method: 'POST' }
+    ),
+
+  // Participant verification & category board (admin)
+  searchCompetitionParticipants: (competitionId, q) =>
+    request(
+      `/admin/live/competitions/${encodeURIComponent(competitionId)}/participants/search?q=${encodeURIComponent(q)}`
+    ),
+  fetchCategoryBoard: (competitionId) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/category-board`),
+  fetchNextTrunkNumber: (competitionId) =>
+    request(`/admin/live/competitions/${encodeURIComponent(competitionId)}/next-trunk-number`),
+  updateParticipant: (registrationId, payload) =>
+    request(`/admin/live/registrations/${encodeURIComponent(registrationId)}`, {
+      method: 'PATCH',
+      body: payload,
+    }),
+
+  // Judge scoring portal (public, private token)
+  fetchJudgeScoringState: (token) => request(`/scoring/${encodeURIComponent(token)}`),
+  submitJudgeScoringSheet: (token, heatId, payload) =>
+    request(`/scoring/${encodeURIComponent(token)}/submit`, {
+      method: 'POST',
+      body: { heatId, payload },
     }),
 };

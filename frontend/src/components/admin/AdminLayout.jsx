@@ -36,7 +36,7 @@ const NAV_ITEMS = [
     icon: History,
     end: false,
   },
-  { to: '/admin/judge', label: 'Judge', icon: Gavel, end: false },
+  { to: '/admin/judge', label: 'Judging Control Room', icon: Gavel, end: false },
   {
     to: '/admin/profile',
     label: 'Admin Profile',
@@ -50,7 +50,7 @@ const ROUTE_TITLES = {
   '/admin/competitions': 'Manage Competitions',
   '/admin/registrations': 'Registrations',
   '/admin/history': 'Competition History',
-  '/admin/judge': 'Judge',
+  '/admin/judge': 'Judging Control Room',
   '/admin/profile': 'Admin Profile',
 };
 

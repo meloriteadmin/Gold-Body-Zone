@@ -65,6 +65,7 @@ export function ManualRegistrationModal({
   isOpen,
   competitions = [],
   selectedCompetitionId = '',
+  initialCategoryId = '',
   onClose,
   onSuccess,
 }) {
@@ -82,6 +83,7 @@ export function ManualRegistrationModal({
   const [gender, setGender] = useState('MALE');
   const [age, setAge] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [trunkNumber, setTrunkNumber] = useState('');
   const [groupId, setGroupId] = useState('');
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
@@ -125,6 +127,9 @@ export function ManualRegistrationModal({
       } else if (competitions.length > 0 && !competitionId) {
         setCompetitionId(competitions[0].id);
       }
+      const initialCategory = competitions.find((item) => item.id === selectedCompetitionId)?.categories?.find((item) => item.id === initialCategoryId);
+      setCategoryId(initialCategory?.id || '');
+      setGender(initialCategory?.gender === 'FEMALE' ? 'FEMALE' : 'MALE');
       setParticipantName('');
       setEmail('');
       setMobileNumber('');
@@ -143,7 +148,7 @@ export function ManualRegistrationModal({
       setCashfreeData(null);
       setPaymentNotice('');
     }
-  }, [isOpen, selectedCompetitionId, competitions]);
+  }, [isOpen, selectedCompetitionId, initialCategoryId, competitions]);
 
   const isWomensCompetition = useMemo(() => {
     return (
@@ -321,6 +326,7 @@ export function ManualRegistrationModal({
     return {
       competitionId: activeCompetition.id,
       categoryId,
+      ...(trunkNumber.trim() ? { trunkNumber: Number(trunkNumber) } : {}),
       groupId: groupId || undefined,
       participantName: participantName.trim(),
       email: email.trim().toLowerCase(),
@@ -798,6 +804,12 @@ export function ManualRegistrationModal({
                     </select>
                   </div>
                 )}
+              </div>
+
+              <div className="max-w-xs">
+                <label className="mb-1 block text-xs font-medium text-zinc-300">Trunk number (optional)</label>
+                <input type="number" min="1" max="99999" step="1" value={trunkNumber} onChange={(event) => setTrunkNumber(event.target.value)} placeholder="Assign now, or later in Category Line-up" className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] px-3 text-xs text-white" />
+                <p className="mt-1 text-[10px] text-zinc-500">Unique across the entire competition. Leave blank to assign later.</p>
               </div>
 
               {!isWomensCompetition && (

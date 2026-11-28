@@ -26,7 +26,10 @@ import {
   Upload,
   Users,
   X,
+  Layers,
 } from 'lucide-react';
+import { CategoryBreakdownPanel } from '../components/admin/CategoryBreakdownPanel.jsx';
+import { ParticipantEditModal } from '../components/admin/ParticipantEditModal.jsx';
 import { CompetitionFormModal } from '../components/admin/CompetitionFormModal.jsx';
 import { EventPhotosManager } from '../components/admin/EventPhotosManager.jsx';
 import { RegistrationDetailModal } from '../components/admin/RegistrationDetailModal.jsx';
@@ -91,10 +94,16 @@ export function AdminCompetitionDetailPage() {
   const [inlineTrunkLoading, setInlineTrunkLoading] = useState(false);
   const [trunkSearchQuery, setTrunkSearchQuery] = useState('');
 
-  const loadCompetition = useCallback(async () => {
+  // Category tab: participant being edited
+  const [catEditing, setCatEditing] = useState(null);
+  const [catRefreshKey, setCatRefreshKey] = useState(0);
+
+  const loadCompetition = useCallback(async ({ silent = false } = {}) => {
     if (!accessToken || !id) return;
-    setLoading(true);
-    setError('');
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const [data, trunkData] = await Promise.all([
         apiClient.fetchAdminCompetition(accessToken, id),
@@ -115,14 +124,20 @@ export function AdminCompetitionDetailPage() {
       }
       setRegistrations(allRegistrations);
     } catch (err) {
-      setError(err.message || 'Failed to load competition details.');
+      if (!silent) setError(err.message || 'Failed to load competition details.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [accessToken, id]);
 
   useEffect(() => {
     loadCompetition();
+  }, [loadCompetition]);
+
+  useEffect(() => {
+    const refresh = () => loadCompetition({ silent: true });
+    window.addEventListener('admin-data-changed', refresh);
+    return () => window.removeEventListener('admin-data-changed', refresh);
   }, [loadCompetition]);
 
   const setTab = (tab) => {
@@ -1091,6 +1106,11 @@ export function AdminCompetitionDetailPage() {
               icon: Users,
             },
             {
+              id: 'categories',
+              label: `Categories (${competition.categories?.length || 0})`,
+              icon: Layers,
+            },
+            {
               id: 'payments',
               label: `Payments (${registrations.filter((r) => r.paymentStatus === 'PAID').length})`,
               icon: CreditCard,
@@ -1526,6 +1546,32 @@ export function AdminCompetitionDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB: CATEGORY-WISE PARTICIPANTS */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'categories' && (
+        <CategoryBreakdownPanel
+          competitionId={competition.id}
+          mode="expand"
+          refreshKey={catRefreshKey}
+          title="Category-wise Participants"
+          onEditParticipant={(p) => setCatEditing(p)}
+        />
+      )}
+      {catEditing && (
+        <ParticipantEditModal
+          participant={catEditing}
+          categories={competition.categories || []}
+          competitionId={competition.id}
+          onClose={() => setCatEditing(null)}
+          onSaved={(updated) => {
+            setCatEditing(updated);
+            setCatRefreshKey((k) => k + 1);
+            loadCompetition({ silent: true });
+          }}
+        />
       )}
 
       {/* ------------------------------------------------------------- */}

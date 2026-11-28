@@ -59,7 +59,15 @@ async function ensureInitialCompetitions() {
   }
 }
 
-const server = app.listen(env.port, env.host, () => {
+const server = app.listen(env.port, env.host, (err) => {
+  // Express 5 passes listen errors (e.g. port already in use) to this callback.
+  if (err) {
+    console.error(
+      `[backend] Could not start on ${env.host}:${env.port}: ${err.code || ''} ${err.message}` +
+        (err.code === 'EADDRINUSE' ? ' — another backend is already running on this port. Close it first.' : '')
+    );
+    process.exit(1);
+  }
   console.log(
     `[backend] Server listening on http://${env.host}:${env.port} (${env.nodeEnv})`
   );

@@ -682,7 +682,14 @@ export async function toggleCompetitionCompletion(req, res, next) {
         : !existing.isCompleted;
 
     if (nextCompleted) {
-      if (computeRegistrationStatus(existing) !== 'CLOSED') {
+      const liveState = await prisma.liveCompetitionState.findUnique({ where: { competitionId: existing.id } });
+      const openLiveHeat = await prisma.liveHeat.findFirst({ where: { competitionId: existing.id, status: 'OPEN' } });
+      if (openLiveHeat) throw new HttpError(400, 'Close or cancel the active judging form before ending this competition.');
+      if (Array.isArray(liveState?.titleAwards) && liveState.titleAwards.length) {
+        const ranking = await prisma.liveHeat.findFirst({ where: { competitionId: existing.id, round: 2, status: 'CLOSED', isTiebreak: false } });
+        if (!ranking) throw new HttpError(400, 'Finish Round 2 ranking before ending this competition.');
+      }
+      if (computeRegistrationStatus(existing) !== 'CLOSED' && !liveState?.titleAwards?.length) {
         throw new HttpError(400, 'Close registrations before completing the competition.');
       }
 
@@ -693,7 +700,7 @@ export async function toggleCompetitionCompletion(req, res, next) {
         const finishedJudging = await prisma.judgingSession.findFirst({
           where: { competitionId: existing.id, status: 'COMPLETED' },
         });
-        if (!finishedJudging) {
+        if (!finishedJudging && !liveState?.titleAwards?.length) {
           throw new HttpError(400, 'Finish judging before marking this competition completed.');
         }
       }
@@ -704,6 +711,7 @@ export async function toggleCompetitionCompletion(req, res, next) {
       data: {
         isCompleted: nextCompleted,
         completedAt: nextCompleted ? new Date() : null,
+        ...(nextCompleted ? { isRegistrationClosed: true, registrationClosedAt: existing.registrationClosedAt || new Date() } : {}),
         ...(nextCompleted ? { isPublished: false } : {}),
       },
       include: ADMIN_COMPETITION_INCLUDE,

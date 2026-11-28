@@ -12,6 +12,7 @@ import {
   generateRegistrationsExcel,
 } from '../services/export.service.js';
 import { settleVerifiedPayment } from '../services/paymentSettlement.service.js';
+import { categoryMatchesMeasurements } from '../services/categoryRules.js';
 import { HttpError } from '../utils/httpError.js';
 import {
   generateRegistrationCode,
@@ -58,6 +59,26 @@ const VALID_REGISTRATION_STATUSES = new Set([
   'CONFIRMED',
   'CANCELLED',
 ]);
+
+/**
+ * Overall registration counts for a competition (independent of pagination,
+ * search and status filters). Respects the All / Online / Manual source tab.
+ */
+async function buildRegistrationSummary(prisma, competitionId, source) {
+  const base = { competitionId };
+  if (source === 'ONLINE') base.isManual = false;
+  else if (source === 'MANUAL') base.isManual = true;
+
+  const [total, confirmed, paid, unpaid, cancelled] = await Promise.all([
+    prisma.registration.count({ where: base }),
+    prisma.registration.count({ where: { ...base, registrationStatus: 'CONFIRMED' } }),
+    prisma.registration.count({ where: { ...base, paymentStatus: 'PAID' } }),
+    prisma.registration.count({ where: { ...base, paymentStatus: { not: 'PAID' } } }),
+    prisma.registration.count({ where: { ...base, registrationStatus: 'CANCELLED' } }),
+  ]);
+
+  return { total, confirmed, paid, unpaid, cancelled };
+}
 
 export async function listRegistrations(req, res, next) {
   try {
@@ -137,7 +158,7 @@ export async function listRegistrations(req, res, next) {
       where.isManual = true;
     }
 
-    const [total, registrations] = await Promise.all([
+    const [total, registrations, summary] = await Promise.all([
       prisma.registration.count({ where }),
       prisma.registration.findMany({
         where,
@@ -146,6 +167,7 @@ export async function listRegistrations(req, res, next) {
         skip: (page - 1) * limit,
         take: limit,
       }),
+      competitionId ? buildRegistrationSummary(prisma, competitionId, source) : null,
     ]);
 
     const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -158,6 +180,8 @@ export async function listRegistrations(req, res, next) {
         total,
         totalPages,
       },
+      // Overall counts for the whole competition (not only the current page).
+      summary,
     });
   } catch (err) {
     next(err);
@@ -204,6 +228,13 @@ export async function updateRegistrationStatus(req, res, next) {
 
     if (!existing) {
       throw new HttpError(404, 'Registration not found.');
+    }
+
+    if (nextStatus === 'CANCELLED') {
+      const openHeat = await prisma.liveHeat.findFirst({ where: { competitionId: existing.competitionId, status: 'OPEN' }, select: { participantIds: true } });
+      if (Array.isArray(openHeat?.participantIds) && openHeat.participantIds.includes(existing.id)) {
+        throw new HttpError(400, 'Close or cancel the active judging form before removing this participant.');
+      }
     }
 
     const updated = await prisma.registration.update({
@@ -366,6 +397,9 @@ export async function createManualRegistration(req, res, next) {
         'The selected category does not belong to this competition.'
       );
     }
+    if (!categoryMatchesMeasurements(targetCategory, validated.weightKg, validated.heightCm)) {
+      throw new HttpError(400, `Measurements do not fit ${targetCategory.name}. Select the matching category.`);
+    }
 
     let targetGroup = null;
     if (validated.groupId) {
@@ -452,10 +486,16 @@ export async function createManualRegistration(req, res, next) {
       : null;
 
     const registration = await prisma.$transaction(async (tx) => {
-      // Manual registrations are NOT automatically assigned trunk numbers upon creation.
-      // Numbers are assigned only when the admin clicks "Assign Trunk Numbers".
-      // If updating an existing registration that already has a trunk number, preserve it.
-      const trunkNumberToAssign = existing?.trunkNumber ? existing.trunkNumber : undefined;
+      const requestedTrunk = req.body.trunkNumber === '' || req.body.trunkNumber == null ? null : Number(req.body.trunkNumber);
+      if (requestedTrunk !== null && (!Number.isInteger(requestedTrunk) || requestedTrunk < 1 || requestedTrunk > 99999)) {
+        throw new HttpError(400, 'Trunk number must be a positive whole number.');
+      }
+      const trunkNumberToAssign = requestedTrunk ?? existing?.trunkNumber ?? undefined;
+      if (requestedTrunk !== null) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${competition.id}))`;
+        const duplicate = await tx.registration.findFirst({ where: { competitionId: competition.id, trunkNumber: requestedTrunk, ...(existing ? { NOT: { id: existing.id } } : {}) }, select: { participantName: true } });
+        if (duplicate) throw new HttpError(409, `Trunk number ${requestedTrunk} is already assigned to ${duplicate.participantName} in this competition.`);
+      }
 
       if (existing) {
         await tx.payment.deleteMany({ where: { registrationId: existing.id } });

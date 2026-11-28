@@ -58,3 +58,11 @@
   width: max-content;
   animation: marquee-scroll 26s linear infinite;
 }
+
+/* Live scoring: print only the final results sheet, in black on white */
+@media print {
+  body * { visibility: hidden !important; }
+  #live-final-results, #live-final-results * { visibility: visible !important; }
+  #live-final-results { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; }
+  #live-final-results * { color: #000 !important; background: transparent !important; border-color: #999 !important; box-shadow: none !important; }
+}

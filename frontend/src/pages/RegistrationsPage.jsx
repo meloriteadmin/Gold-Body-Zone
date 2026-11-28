@@ -27,6 +27,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import { CategoryBreakdownPanel } from '../components/admin/CategoryBreakdownPanel.jsx';
 import { ManualRegistrationModal } from '../components/admin/ManualRegistrationModal.jsx';
 import {
   formatStatusLabel,
@@ -77,6 +78,9 @@ export function RegistrationsPage() {
     total: 0,
     totalPages: 1,
   });
+  // Overall counts for the whole competition (not only the visible page)
+  const [summary, setSummary] = useState(null);
+  const [breakdownRefreshKey, setBreakdownRefreshKey] = useState(0);
 
   // Filters within a competition
   const [searchInput, setSearchInput] = useState('');
@@ -128,16 +132,17 @@ export function RegistrationsPage() {
   }, [paramCompetitionId]);
 
   // Load competitions list
-  const loadCompetitions = useCallback(async () => {
+  // `silent` refreshes update the data in place without showing a loader.
+  const loadCompetitions = useCallback(async ({ silent = false } = {}) => {
     if (!accessToken) return;
-    setCompetitionsLoading(true);
+    if (!silent) setCompetitionsLoading(true);
     try {
       const data = await apiClient.fetchAdminCompetitions(accessToken);
       setCompetitions(Array.isArray(data?.competitions) ? data.competitions : []);
     } catch (err) {
-      setError(err?.message || 'Failed to load competitions.');
+      if (!silent) setError(err?.message || 'Failed to load competitions.');
     } finally {
-      setCompetitionsLoading(false);
+      if (!silent) setCompetitionsLoading(false);
     }
   }, [accessToken]);
 
@@ -175,10 +180,12 @@ export function RegistrationsPage() {
   }, [availableCategories, categoryId]);
 
   // Load registrations when a competition is selected
-  const loadRegistrations = useCallback(async () => {
+  const loadRegistrations = useCallback(async ({ silent = false } = {}) => {
     if (!accessToken || !selectedCompetitionId) return;
-    setLoading(true);
-    setError('');
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const data = await apiClient.fetchAdminRegistrations(accessToken, {
         search: debouncedSearch,
@@ -202,12 +209,15 @@ export function RegistrationsPage() {
           totalPages: 1,
         }
       );
+      setSummary(data?.summary || null);
     } catch (err) {
-      setError(
-        err?.message || 'Failed to load registrations. Please try again.'
-      );
+      if (!silent) {
+        setError(
+          err?.message || 'Failed to load registrations. Please try again.'
+        );
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [
     accessToken,
@@ -257,10 +267,23 @@ export function RegistrationsPage() {
   // Refresh payment and registration changes while this admin page is open.
   useEffect(() => {
     if (!selectedCompetitionId) return;
+    // Silent background refresh: data updates in place, no loader / no flicker.
     const timer = window.setInterval(() => {
-      if (!document.hidden) { loadRegistrations(); loadCompetitions(); }
+      if (!document.hidden) {
+        loadRegistrations({ silent: true });
+        loadCompetitions({ silent: true });
+      }
     }, 15_000);
     return () => window.clearInterval(timer);
+  }, [selectedCompetitionId, loadRegistrations, loadCompetitions]);
+
+  useEffect(() => {
+    const refresh = () => {
+      loadCompetitions({ silent: true });
+      if (selectedCompetitionId) loadRegistrations({ silent: true });
+    };
+    window.addEventListener('admin-data-changed', refresh);
+    return () => window.removeEventListener('admin-data-changed', refresh);
   }, [selectedCompetitionId, loadRegistrations, loadCompetitions]);
 
   const handleSelectCompetition = (comp) => {
@@ -284,6 +307,7 @@ export function RegistrationsPage() {
     setSearchInput('');
     setPage(1);
     setRegistrations([]);
+    setSummary(null);
     loadCompetitions();
   };
 
@@ -635,7 +659,10 @@ export function RegistrationsPage() {
 
           <button
             type="button"
-            onClick={loadRegistrations}
+            onClick={() => {
+              loadRegistrations();
+              setBreakdownRefreshKey((k) => k + 1);
+            }}
             disabled={loading}
             className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#171717] px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:border-[#F15A24]/40 disabled:opacity-50"
           >
@@ -703,7 +730,7 @@ export function RegistrationsPage() {
                 Total
               </p>
               <p className="font-display text-lg font-bold text-white">
-                {pagination.total}
+                {summary ? summary.total : pagination.total}
               </p>
             </div>
             <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-2.5 text-center">
@@ -711,11 +738,11 @@ export function RegistrationsPage() {
                 Confirmed
               </p>
               <p className="font-display text-lg font-bold text-blue-400">
-                {
-                  registrations.filter(
-                    (r) => r.registrationStatus === 'CONFIRMED'
-                  ).length
-                }
+                {summary
+                  ? summary.confirmed
+                  : registrations.filter(
+                      (r) => r.registrationStatus === 'CONFIRMED'
+                    ).length}
               </p>
             </div>
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-center">
@@ -723,10 +750,10 @@ export function RegistrationsPage() {
                 Paid
               </p>
               <p className="font-display text-lg font-bold text-emerald-400">
-                {
-                  registrations.filter((r) => r.paymentStatus === 'PAID')
-                    .length
-                }
+                {summary
+                  ? summary.paid
+                  : registrations.filter((r) => r.paymentStatus === 'PAID')
+                      .length}
               </p>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-center">
@@ -734,10 +761,10 @@ export function RegistrationsPage() {
                 Unpaid / Pending
               </p>
               <p className="font-display text-lg font-bold text-amber-400">
-                {
-                  registrations.filter((r) => r.paymentStatus !== 'PAID')
-                    .length
-                }
+                {summary
+                  ? summary.unpaid
+                  : registrations.filter((r) => r.paymentStatus !== 'PAID')
+                      .length}
               </p>
             </div>
           </div>
@@ -752,6 +779,19 @@ export function RegistrationsPage() {
           </span>
         </div>
       )}
+
+      {/* Category-wise participants (based on the competition's own categories) */}
+      <CategoryBreakdownPanel
+        competitionId={selectedCompetitionId}
+        refreshKey={breakdownRefreshKey}
+        selectedCategoryId={categoryId}
+        onSelectCategory={(catId) => {
+          setCategoryId(catId);
+          setGroupId('');
+          setPage(1);
+        }}
+        collapsible
+      />
 
       {/* Filter Toolbar */}
       <section className="rounded-2xl border border-white/[0.08] bg-[#171717] p-4 shadow-sm space-y-3">
@@ -821,7 +861,7 @@ export function RegistrationsPage() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search name, email, code..."
+              placeholder="Search name, email, phone, code..."
               className="h-10 w-full rounded-xl border border-white/10 bg-[#222222] pr-3 pl-9 text-xs text-white placeholder-zinc-500 focus:border-[#F15A24] focus:outline-none"
             />
           </div>
